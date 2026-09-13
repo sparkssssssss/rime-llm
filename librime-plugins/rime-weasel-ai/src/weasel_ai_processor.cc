@@ -65,12 +65,15 @@ void AiCorrectionProcessor::LoadConfig() {
   if (!engine_ || !engine_->schema())
     return;
   trigger_loaded_ = false;
-  // Schema-level config first (ai_correction under <schema>.schema.yaml).
-  if (!config_.Load(engine_->schema()->config(), name_space_)) {
+  // Config node is fixed to "ai_correction" (matches docs & example yaml).
+  // NOTE: do NOT pass name_space_ here - for a prescription without an
+  // explicit "@alias" it equals the class name ("ai_correction_processor"),
+  // which is NOT where the config lives.
+  if (!config_.Load(engine_->schema()->config(), "ai_correction")) {
     // Fall back to global default config (default.yaml / default.custom.yaml)
     // so users can enable the feature for ALL schemas in one place.
     rime::the<rime::Config> global(rime::Config::Require("config")->Create("default"));
-    if (!config_.Load(global.get(), name_space_)) {
+    if (!config_.Load(global.get(), "ai_correction")) {
       LOG(ERROR) << "[weasel_ai] config disabled or incomplete "
                  << "(enabled/model/base_url) in both schema and default config";
       return;  // disabled or misconfigured: processor stays inert
