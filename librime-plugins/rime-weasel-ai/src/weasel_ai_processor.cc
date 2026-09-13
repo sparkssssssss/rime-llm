@@ -73,6 +73,20 @@ void AiCorrectionProcessor::LoadConfig() {
     // Fall back to global default config (default.yaml / default.custom.yaml)
     // so users can enable the feature for ALL schemas in one place.
     rime::the<rime::Config> global(rime::Config::Require("config")->Create("default"));
+    if (!global) {
+      LOG(ERROR) << "[weasel_ai] fallback Config::Create(\"default\") returned NULL";
+      return;
+    }
+    {
+      bool en = false;
+      std::string m, u;
+      bool got_en = global->GetBool("ai_correction/enabled", &en);
+      bool got_m = global->GetString("ai_correction/model", &m);
+      bool got_u = global->GetString("ai_correction/base_url", &u);
+      LOG(INFO) << "[weasel_ai] default-config probe: GetBool(enabled)=" << got_en
+                << " value=" << en << " GetBool(model)=" << got_m
+                << " GetString(base_url)=" << got_u;
+    }
     if (!config_.Load(global.get(), "ai_correction")) {
       LOG(ERROR) << "[weasel_ai] config disabled or incomplete "
                  << "(enabled/model/base_url) in both schema and default config";
