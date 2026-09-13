@@ -1,0 +1,50 @@
+# Weasel AI 校准功能配置示例
+#
+# 用法（二选一）：
+#
+# 方式 A（推荐，全局生效，所有方案可用）：
+#   将本文件全部内容（patch: 之后的键值）合并进 %AppData%\Rime\default.custom.yaml。
+#   注意：engine 挂载项需要每个方案各写一行（把 luna_pinyin 换成你的方案 id，
+#   例如 double_pinyin、rime_ice 等）；ai_correction/* 配置只需写一次。
+#
+# 方式 B（仅单个方案生效）：
+#   将本文件重命名为 <方案id>.custom.yaml（例如 luna_pinyin.custom.yaml）。
+#
+# 修改后在开始菜单执行「【小狼毫】重新部署」生效。
+
+patch:
+  # ---- 第 1 部分：engine 挂载（每个要启用 AI 的方案各一行）----
+  # processor 放最前（先于 speller/selector 看到按键，Ctrl+` 才不会被吃掉）；
+  # translator 放最后（候选追加在普通候选之后）；
+  # filter 放最后（排末尾 + 去重，须在 uniquifier 之后）。
+  luna_pinyin/engine/processors/@before 0: ai_correction_processor
+  luna_pinyin/engine/translators/@next: ai_correction_translator
+  luna_pinyin/engine/filters/@next: ai_correction_filter
+
+  # ---- 第 2 部分：AI 校准配置（全局只需一份）----
+  # 总开关：测试联调通过前保持 false 也可（不会影响普通输入）。
+  ai_correction/enabled: true
+  # 触发键：默认 Control+grave（Ctrl+`）。注意 grave 是数字 1 左边的反引号键。
+  # 若与你的方案冲突可改成 Control+period 等。
+  ai_correction/trigger_key: Control+grave
+  # OpenAI 兼容接口地址。联调用本地 mock；正式用 OpenAI 或其他兼容服务。
+  #   mock:    http://127.0.0.1:8765  （先运行 python mock_ai_server.py 8765）
+  #   OpenAI:  https://api.openai.com
+  #   Ollama:  http://127.0.0.1:11434 （模型名填 Ollama 里的名字）
+  ai_correction/base_url: http://127.0.0.1:8765
+  ai_correction/api_path: /v1/chat/completions
+  ai_correction/model: mock
+  # API Key：mock 不需要；OpenAI 填 sk-xxx（生产建议改用 api_key_env 引用环境变量）
+  ai_correction/api_key: ""
+  # 超时（毫秒）。同步触发期间会等待，建议 500～1500。
+  ai_correction/timeout_ms: 800
+  # 最多 1 个 AI 候选，追加到候选列表最后
+  ai_correction/max_candidates: 1
+  ai_correction/candidate_position: last
+  # 触发的最小/最大拼音长度（字母数）
+  ai_correction/min_input_length: 6
+  ai_correction/max_input_length: 64
+  # 已提交上下文窗口（字符数），0 = 不发送上下文
+  ai_correction/context_window: 100
+  # 候选注释文字
+  ai_correction/comment: AI校准

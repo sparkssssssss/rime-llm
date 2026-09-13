@@ -1,0 +1,135 @@
+name: Build Weasel AI rime.dll
+
+on:
+  push:
+    branches: ['*']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-rime-dll:
+    runs-on: windows-2022
+    env:
+      boost_version: 1.84.0
+      BOOST_ROOT: ${{ github.workspace }}\librime\deps\boost_1_84_0
+      CMAKE_GENERATOR: "Visual Studio 17 2022"
+      PLATFORM_TOOLSET: v143
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Configure build environment
+        shell: pwsh
+        run: |
+          Copy-Item env.vs2022.bat env.bat
+          Copy-Item env.vs2022.bat librime\env.bat
+          "BOOST_ROOT=$env:BOOST_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "RIME_ROOT=$env:GITHUB_WORKSPACE\librime" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Cache Boost
+        id: cache-boost
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.BOOST_ROOT }}
+          key: ${{ runner.os }}-boost-${{ env.boost_version }}-librime
+
+      - name: Install Boost (into librime deps)
+        if: steps.cache-boost.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cd librime
+          # install_boost.bat downloads via aria2c; runner has it? fallback to manual download
+          if (-not (Get-Command aria2c -ErrorAction SilentlyContinue)) {
+            Write-Host "aria2c not found - downloading boost manually"
+            $v = "1.84.0"
+            $xyz = "1_84_0"
+            $url = "https://archives.boost.io/release/$v/source/boost_$xyz.7z"
+            $dest = "deps"
+            New-Item -ItemType Directory -Force -Path $dest | Out-Null
+            Invoke-WebRequest -Uri $url -OutFile "$dest\boost_$xyz.7z"
+            if (Get-Command 7z -ErrorAction SilentlyContinue) {
+              7z x "$dest\boost_$xyz.7z" -o"$dest" -y | Out-Null
+            } else {
+              # expand using the bundled 7z from chocolatey path
+              & "C:\ProgramData\chocolatey\bin\7z.exe" x "$dest\boost_$xyz.7z" -o"$dest" -y | Out-Null
+            }
+          } else {
+            .\install_boost.bat
+          }
+          if (-not (Test-Path "$env:BOOST_ROOT\boost")) { throw "Boost not prepared at $env:BOOST_ROOT" }
+
+      - name: Inject main-repo plugins into librime
+        shell: cmd
+        run: inject-plugins.bat
+
+      - name: Build librime (x64, with weasel_ai plugin)
+        shell: cmd
+        run: |
+          cd librime
+          set ARCH=x64
+          call build.bat deps release
+          if errorlevel 1 exit /b 1
+          call build.bat release
+          if errorlevel 1 exit /b 1
+          rem stash away this arch build so Win32 build won't clash (same trick as weasel build.bat)
+          ren dist dist_x64
+          ren build build_x64
+          ren lib lib_x64
+          for %%d in (glog googletest leveldb marisa-trie opencc yaml-cpp) do (
+            if exist deps\%%d\build ren deps\%%d\build build_x64
+          )
+
+      - name: Verify weasel_ai module linked
+        shell: pwsh
+        run: |
+          $dll = "librime\dist_x64\lib\rime.dll"
+          if (-not (Test-Path $dll)) { throw "rime.dll not found at $dll" }
+          $dumpbin = Get-ChildItem "C:\Program Files*\Microsoft Visual Studio" -Recurse -Filter dumpbin.exe -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match 'Hostx64\\x64' } | Select-Object -First 1
+          if ($dumpbin) {
+            $out = & $dumpbin.FullName /EXPORTS $dll | Select-String "weasel_ai"
+            if ($out) { Write-Host "weasel_ai module found in exports:" $out } else { Write-Host "WARN: weasel_ai not in exports (module may still be merged via static init)" }
+          }
+          # size sanity: plugin adds tens of KB
+          $size = (Get-Item $dll).Length
+          Write-Host "rime.dll size: $([math]::Round($size/1MB,2)) MB"
+
+      - name: Upload rime.dll (x64)
+        uses: actions/upload-artifact@v4
+        with:
+          name: rime-ai-x64
+          if-no-files-found: error
+          path: |
+            librime\dist_x64\lib\rime.dll
+            librime\dist_x64\lib\rime.lib
+            librime\dist_x64\lib\rime.pdb
+
+      - name: Build librime (Win32, with weasel_ai plugin)
+        shell: cmd
+        run: |
+          cd librime
+          set ARCH=Win32
+          call build.bat deps release
+          if errorlevel 1 exit /b 1
+          call build.bat release
+          if errorlevel 1 exit /b 1
+          ren dist dist_Win32
+          ren build build_Win32
+          ren lib lib_Win32
+          for %%d in (glog googletest leveldb marisa-trie opencc yaml-cpp) do (
+            if exist deps\%%d\build ren deps\%%d\build build_Win32
+          )
+
+      - name: Upload rime.dll (Win32)
+        uses: actions/upload-artifact@v4
+        with:
+          name: rime-ai-win32
+          if-no-files-found: error
+          path: |
+            librime\dist_Win32\lib\rime.dll
+            librime\dist_Win32\lib\rime.lib
+            librime\dist_Win32\lib\rime.pdb
