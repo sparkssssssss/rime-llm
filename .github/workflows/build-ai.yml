@@ -57,6 +57,13 @@ jobs:
         shell: cmd
         run: inject-plugins.bat
 
+      - name: Assert plugin sources are in place
+        shell: pwsh
+        run: |
+          $p = "librime\plugins\rime-weasel-ai\src\weasel_ai_module.cc"
+          if (-not (Test-Path $p)) { throw "plugin source not found at $p - injection failed" }
+          Write-Host "plugin source OK: $p"
+
       - name: Build librime (x64 only, with weasel_ai plugin)
         shell: cmd
         run: |
@@ -72,13 +79,18 @@ jobs:
         run: |
           $dll = "librime\dist\lib\rime.dll"
           if (-not (Test-Path $dll)) { throw "rime.dll not found at $dll" }
+          $bytes = [IO.File]::ReadAllBytes($dll)
+          $ascii = [Text.Encoding]::ASCII.GetString($bytes)
+          if ($ascii -notmatch 'weasel_ai') {
+            throw "FATAL: rime.dll does not contain weasel_ai module - plugin injection failed"
+          }
+          Write-Host "OK: weasel_ai module found in rime.dll binary"
           $dumpbin = Get-ChildItem "C:\Program Files*\Microsoft Visual Studio" -Recurse -Filter dumpbin.exe -ErrorAction SilentlyContinue |
             Where-Object { $_.FullName -match 'Hostx64\\x64' } | Select-Object -First 1
           if ($dumpbin) {
             $out = & $dumpbin.FullName /EXPORTS $dll | Select-String "weasel_ai"
-            if ($out) { Write-Host "weasel_ai module found in exports:" $out } else { Write-Host "WARN: weasel_ai not in exports (module may still be merged via static init)" }
+            if ($out) { Write-Host "export check:" $out }
           }
-          # size sanity: plugin adds tens of KB
           $size = (Get-Item $dll).Length
           Write-Host "rime.dll size: $([math]::Round($size/1MB,2)) MB"
 
