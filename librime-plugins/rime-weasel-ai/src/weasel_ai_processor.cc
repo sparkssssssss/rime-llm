@@ -69,9 +69,13 @@ void AiCorrectionProcessor::LoadConfig() {
   // NOTE: do NOT pass name_space_ here - for a prescription without an
   // explicit "@alias" it equals the class name ("ai_correction_processor"),
   // which is NOT where the config lives.
+  LOG(INFO) << "[weasel_ai] LoadConfig begin; schema_id="
+            << (engine_->schema() ? engine_->schema()->schema_id() : "(null)");
   if (!config_.Load(engine_->schema()->config(), "ai_correction")) {
     // Fall back to global default config (default.yaml / default.custom.yaml)
     // so users can enable the feature for ALL schemas in one place.
+    LOG(INFO) << "[weasel_ai] schema config did not carry ai_correction; "
+              << "falling back to deployed default config";
     rime::the<rime::Config> global(rime::Config::Require("config")->Create("default"));
     if (!global) {
       LOG(ERROR) << "[weasel_ai] fallback Config::Create(\"default\") returned NULL";

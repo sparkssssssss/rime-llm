@@ -35,6 +35,22 @@ jobs:
           path: ${{ env.BOOST_ROOT }}
           key: ${{ runner.os }}-boost-${{ env.boost_version }}-librime
 
+      - name: Cache librime deps build
+        uses: actions/cache@v4
+        with:
+          path: |
+            librime\deps\glog\build
+            librime\deps\googletest\build
+            librime\deps\leveldb\build
+            librime\deps\marisa-trie\build
+            librime\deps\opencc\build
+            librime\deps\yaml-cpp\build
+            librime\lib
+            librime\share
+          key: ${{ runner.os }}-rime-deps-x64-${{ hashFiles('librime/.git-modules', 'librime/deps/*/HEAD') }}
+          restore-keys: |
+            ${{ runner.os }}-rime-deps-x64-
+
       - name: Install Boost (into librime deps)
         if: steps.cache-boost.outputs.cache-hit != 'true'
         shell: pwsh
