@@ -1,5 +1,6 @@
 #include "weasel_ai_processor.h"
 
+
 #include <rime/commit_history.h>
 #include <rime/config.h>
 #include <rime/context.h>
@@ -69,11 +70,21 @@ void AiCorrectionProcessor::LoadConfig() {
     // Fall back to global default config (default.yaml / default.custom.yaml)
     // so users can enable the feature for ALL schemas in one place.
     rime::the<rime::Config> global(rime::Config::Require("config")->Create("default"));
-    if (!config_.Load(global.get(), name_space_))
+    if (!config_.Load(global.get(), name_space_)) {
+      LOG(ERROR) << "[weasel_ai] config disabled or incomplete "
+                 << "(enabled/model/base_url) in both schema and default config";
       return;  // disabled or misconfigured: processor stays inert
+    } else {
+      LOG(INFO) << "[weasel_ai] config loaded from default: model="
+                << config_.model << " trigger=" << config_.trigger_key
+                << " timeout_ms=" << config_.timeout_ms;
+    }
   }
   trigger_.Parse(config_.trigger_key);
   trigger_loaded_ = !config_.trigger_key.empty() && trigger_.keycode() != 0;
+  LOG(INFO) << "[weasel_ai] trigger parsed: keycode=0x" << std::hex
+            << trigger_.keycode() << std::dec << " modifier=0x"
+            << trigger_.modifier() << " loaded=" << trigger_loaded_;
 }
 
 rime::string AiCorrectionProcessor::CurrentSegmentInput() const {
@@ -122,6 +133,12 @@ void AiCorrectionProcessor::TriggerCorrection(
   int token = store_->BeginRequest();
   CorrectionService service(config_);
   CorrectionResponse response = service.Correct(request);
+  if (response.ok) {
+    LOG(INFO) << "[weasel_ai] correction ok, candidates="
+              << response.candidates.size();
+  } else {
+    LOG(ERROR) << "[weasel_ai] correction failed: " << response.error;
+  }
   AiResult result;
   result.input = segment_input;
   if (response.ok) {
@@ -143,8 +160,19 @@ rime::ProcessResult AiCorrectionProcessor::ProcessKeyEvent(
     const rime::KeyEvent& key_event) {
   if (!config_.enabled || !trigger_loaded_ || !engine_)
     return rime::kNoop;
+  // Match on keycode + "all trigger modifiers held". State modifiers that
+  // ride along (NumLock = Mod2, etc.) must not break the match, so compare
+  // with containment instead of strict equality.
+  const int trigger_modifiers = trigger_.modifier() & 0xff;
+  const int event_modifiers = key_event.modifier() & 0xff;
+  LOG(INFO) << "[weasel_ai] key: keycode=0x" << std::hex
+            << key_event.keycode() << std::dec << " modifier=0x"
+            << event_modifiers << " (trigger 0x" << std::hex
+            << trigger_.keycode() << std::dec << "/0x" << std::hex
+            << trigger_modifiers << std::dec << ")";
   if (key_event.keycode() != trigger_.keycode() ||
-      key_event.modifier() != trigger_.modifier())
+      (event_modifiers & trigger_modifiers) != trigger_modifiers ||
+      event_modifiers & ~(trigger_modifiers | kLockMask))
     return rime::kNoop;
   if (key_event.release())
     return rime::kAccepted;  // swallow release of the trigger too
@@ -155,6 +183,7 @@ rime::ProcessResult AiCorrectionProcessor::ProcessKeyEvent(
       static_cast<int>(segment_input.size()) > config_.max_input_length)
     return rime::kAccepted;
 
+  LOG(INFO) << "[weasel_ai] TRIGGERED, input=\"" << segment_input << "\"";
   TriggerCorrection(segment_input);
   return rime::kAccepted;
 }
