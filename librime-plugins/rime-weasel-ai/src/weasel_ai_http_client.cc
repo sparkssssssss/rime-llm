@@ -30,7 +30,8 @@ bool SplitUrl(const std::string& url, UrlParts* parts) {
     return false;
   }
   size_t slash = rest.find('/');
-  std::string host_port = slash == std::string::npos ? rest : rest.substr(0, slash);
+  std::string host_port =
+      slash == std::string::npos ? rest : rest.substr(0, slash);
   std::string path = slash == std::string::npos ? "/" : rest.substr(slash);
 
   std::string port_str;
@@ -73,17 +74,16 @@ bool SplitUrl(const std::string& url, UrlParts* parts) {
   return true;
 }
 
-std::string NarrowString(const std::wstring& wide) {
-  if (wide.empty())
-    return std::string();
-  int cp = WideCharToMultiByte(CP_UTF8, 0, wide.c_str(),
-                               static_cast<int>(wide.size()), nullptr, 0,
-                               nullptr, nullptr);
+std::wstring WidenString(const std::string& utf8) {
+  if (utf8.empty())
+    return std::wstring();
+  int cp = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(),
+                               static_cast<int>(utf8.size()), nullptr, 0);
   if (cp <= 0)
-    return std::string();
-  std::string out(static_cast<size_t>(cp), '\0');
-  WideCharToMultiByte(CP_UTF8, 0, wide.c_str(), static_cast<int>(wide.size()),
-                      out.data(), cp, nullptr, nullptr);
+    return std::wstring();
+  std::wstring out(static_cast<size_t>(cp), L'\0');
+  MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), static_cast<int>(utf8.size()),
+                      out.data(), cp);
   return out;
 }
 
@@ -101,16 +101,27 @@ HttpRequestResult HttpPostJson(const std::string& url,
     return result;
   }
 
-  HINTERNET session = WinHttpOpen(L"WeaselAI/1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
-                                  WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+  HINTERNET session =
+      WinHttpOpen(L"WeaselAI/1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+                  WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
   if (!session) {
     result.error = "winhttp_open_failed";
     return result;
   }
-  const int timeout = timeout_ms > 0 ? timeout_ms : 800;
-  WinHttpSetOption(session, WINHTTP_OPTION_CONNECT_TIMEOUT, &timeout, sizeof(timeout));
-  WinHttpSetOption(session, WINHTTP_OPTION_SEND_TIMEOUT, &timeout, sizeof(timeout));
-  WinHttpSetOption(session, WINHTTP_OPTION_RECEIVE_TIMEOUT, &timeout, sizeof(timeout));
+
+  // WinHttpSetOption(HINTERNET, DWORD, _In_ LPVOID, DWORD): the buffer must
+  // be writable and the size is in bytes; *_TIMEOUT values are milliseconds.
+  DWORD timeout_value = static_cast<DWORD>(timeout_ms > 0 ? timeout_ms : 800);
+  if (!WinHttpSetOption(session, WINHTTP_OPTION_CONNECT_TIMEOUT,
+                        &timeout_value, sizeof(timeout_value)) ||
+      !WinHttpSetOption(session, WINHTTP_OPTION_SEND_TIMEOUT,
+                        &timeout_value, sizeof(timeout_value)) ||
+      !WinHttpSetOption(session, WINHTTP_OPTION_RECEIVE_TIMEOUT,
+                        &timeout_value, sizeof(timeout_value))) {
+    result.error = "set_timeout_failed";
+    WinHttpCloseHandle(session);
+    return result;
+  }
 
   HINTERNET connect = WinHttpConnect(session, parts.host.c_str(), parts.port, 0);
   if (!connect) {
@@ -134,11 +145,13 @@ HttpRequestResult HttpPostJson(const std::string& url,
       L"Content-Type: application/json\r\n"
       L"Accept: application/json\r\n";
   if (!api_key.empty()) {
-    headers += L"Authorization: Bearer " + NarrowString(api_key) + L"\r\n";
+    // api_key is UTF-8 config text; widen to UTF-16 for the header value.
+    headers += L"Authorization: Bearer " + WidenString(api_key) + L"\r\n";
   }
 
-  BOOL sent = WinHttpSendRequest(request, headers.c_str(),
-                                 static_cast<DWORD>(headers.size()),
+  // NOTE: total length is in characters (not bytes) for request headers.
+  const DWORD headers_chars = static_cast<DWORD>(headers.size());
+  BOOL sent = WinHttpSendRequest(request, headers.c_str(), headers_chars,
                                  const_cast<char*>(json_body.data()),
                                  static_cast<DWORD>(json_body.size()),
                                  static_cast<DWORD>(json_body.size()), 0);
