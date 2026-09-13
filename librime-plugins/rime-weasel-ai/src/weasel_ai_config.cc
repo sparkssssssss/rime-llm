@@ -25,6 +25,12 @@ bool AiCorrectionConfig::Load(rime::Config* config,
 
   config->GetBool(prefix + "/enabled", &enabled);
   config->GetString(prefix + "/trigger_key", &trigger_key);
+  if (auto list = config->GetList(prefix + "/trigger_keys")) {
+    for (size_t i = 0; i < list->size(); ++i) {
+      if (auto v = rime::As<rime::ConfigValue>(list->GetAt(i)))
+        trigger_keys.push_back(v->str());
+    }
+  }
   config->GetString(prefix + "/base_url", &base_url);
   config->GetString(prefix + "/api_path", &api_path);
   config->GetString(prefix + "/model", &model);

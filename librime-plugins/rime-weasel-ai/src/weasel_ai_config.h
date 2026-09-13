@@ -24,6 +24,7 @@
 #define WEASEL_AI_CONFIG_H_
 
 #include <string>
+#include <vector>
 
 #include <rime/common.h>
 #include <rime/config.h>
@@ -35,6 +36,7 @@ struct AiCorrectionConfig {
 
   bool enabled = false;
   std::string trigger_key = "Control+grave";  // repr parsed at use time
+  std::vector<std::string> trigger_keys;      // extra trigger keys (optional)
   std::string base_url = "https://api.openai.com";
   std::string api_path = "/v1/chat/completions";
   std::string model;

@@ -101,11 +101,31 @@ void AiCorrectionProcessor::LoadConfig() {
                 << " timeout_ms=" << config_.timeout_ms;
     }
   }
-  trigger_.Parse(config_.trigger_key);
-  trigger_loaded_ = !config_.trigger_key.empty() && trigger_.keycode() != 0;
-  LOG(INFO) << "[weasel_ai] trigger parsed: keycode=0x" << std::hex
-            << trigger_.keycode() << std::dec << " modifier=0x"
-            << trigger_.modifier() << " loaded=" << trigger_loaded_;
+  triggers_.clear();
+  std::vector<std::string> reps;
+  if (!config_.trigger_key.empty())
+    reps.push_back(config_.trigger_key);
+  for (const auto& extra : config_.trigger_keys) {
+    if (!extra.empty())
+      reps.push_back(extra);
+  }
+  for (const auto& rep : reps) {
+    rime::KeyEvent key;
+    if (!key.Parse(rep) || key.keycode() == 0)
+      continue;
+    // ignore duplicates
+    bool dup = false;
+    for (const auto& t : triggers_)
+      if (t.keycode() == key.keycode() && t.modifier() == key.modifier())
+        dup = true;
+    if (!dup)
+      triggers_.push_back(key);
+  }
+  trigger_loaded_ = !triggers_.empty();
+  for (const auto& t : triggers_) {
+    LOG(INFO) << "[weasel_ai] trigger parsed: keycode=0x" << std::hex
+              << t.keycode() << std::dec << " modifier=0x" << t.modifier();
+  }
 }
 
 rime::string AiCorrectionProcessor::CurrentSegmentInput() const {
@@ -184,17 +204,30 @@ rime::ProcessResult AiCorrectionProcessor::ProcessKeyEvent(
   // Match on keycode + "all trigger modifiers held". State modifiers that
   // ride along (NumLock = Mod2, etc.) must not break the match, so compare
   // with containment instead of strict equality.
-  const int trigger_modifiers = trigger_.modifier() & 0xff;
   const int event_modifiers = key_event.modifier() & 0xff;
-  LOG(INFO) << "[weasel_ai] key: keycode=0x" << std::hex
-            << key_event.keycode() << std::dec << " modifier=0x"
-            << event_modifiers << " (trigger 0x" << std::hex
-            << trigger_.keycode() << std::dec << "/0x" << std::hex
-            << trigger_modifiers << std::dec << ")";
-  if (key_event.keycode() != trigger_.keycode() ||
-      (event_modifiers & trigger_modifiers) != trigger_modifiers ||
-      event_modifiers & ~(trigger_modifiers | kLockMask))
+  const rime::KeyEvent* hit = nullptr;
+  for (const auto& t : triggers_) {
+    const int trigger_modifiers = t.modifier() & 0xff;
+    if (key_event.keycode() == t.keycode() &&
+        (event_modifiers & trigger_modifiers) == trigger_modifiers &&
+        (event_modifiers & ~(trigger_modifiers | kLockMask)) == 0) {
+      hit = &t;
+      break;
+    }
+  }
+  if (!hit) {
+    // Log only near-misses on the trigger keycode to keep the log lean.
+    for (const auto& t : triggers_) {
+      if (key_event.keycode() == t.keycode()) {
+        LOG(INFO) << "[weasel_ai] key near-miss: keycode=0x" << std::hex
+                  << key_event.keycode() << std::dec << " modifier=0x"
+                  << event_modifiers << " (want 0x"
+                  << (t.modifier() & 0xff) << ")";
+      }
+    }
     return rime::kNoop;
+  }
+  LOG(INFO) << "[weasel_ai] trigger key down matched";
   if (key_event.release())
     return rime::kAccepted;  // swallow release of the trigger too
 

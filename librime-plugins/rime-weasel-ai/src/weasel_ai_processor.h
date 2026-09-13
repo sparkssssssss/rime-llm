@@ -18,6 +18,8 @@
 #define WEASEL_AI_PROCESSOR_H_
 
 #include <rime/key_event.h>
+
+#include <vector>
 #include <rime/processor.h>
 
 #include "weasel_ai_config.h"
@@ -40,7 +42,7 @@ class AiCorrectionProcessor : public rime::Processor {
 
   AiCorrectionConfig config_;
   rime::the<AiResultStore> store_;
-  rime::KeyEvent trigger_;
+  std::vector<rime::KeyEvent> triggers_;
   bool trigger_loaded_ = false;
 };
 
