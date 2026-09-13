@@ -1,9 +1,8 @@
 name: Build Weasel AI rime.dll
 
+# 手动触发专用：只在 Actions 页面点 "Run workflow" 时构建，
+# push / PR 不再自动触发。
 on:
-  push:
-    branches: ['*']
-  pull_request:
   workflow_dispatch:
 
 jobs:
