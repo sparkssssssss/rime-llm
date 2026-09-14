@@ -197,6 +197,25 @@ void AiCorrectionProcessor::TriggerCorrection(
   // normal ProcessKeyEvent path.
   bool refreshed = ctx->RefreshNonConfirmedComposition();
   LOG(INFO) << "[weasel_ai] RefreshNonConfirmedComposition -> " << refreshed;
+
+  // Move selection to the AI candidate so it is visible immediately (the
+  // candidate sits at the end of the list, far past the first page).
+  if (refreshed) {
+    auto& seg2 = ctx->composition().back();
+    if (seg2.menu) {
+      for (size_t i = 0; i < 50; ++i) {
+        auto cand = seg2.menu->GetCandidateAt(i);
+        if (!cand)
+          break;
+        if (cand->type() == "ai_correction") {
+          if (ctx->Highlight(i)) {
+            LOG(INFO) << "[weasel_ai] highlighted AI candidate at index " << i;
+          }
+          break;
+        }
+      }
+    }
+  }
 }
 
 rime::ProcessResult AiCorrectionProcessor::ProcessKeyEvent(
