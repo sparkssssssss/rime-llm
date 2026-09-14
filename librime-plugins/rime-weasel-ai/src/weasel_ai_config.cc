@@ -42,6 +42,8 @@ bool AiCorrectionConfig::Load(rime::Config* config,
   config->GetInt(prefix + "/max_input_length", &max_input_length);
   config->GetInt(prefix + "/context_window", &context_window);
   config->GetString(prefix + "/comment", &comment);
+  config->GetString(prefix + "/candidate_position", &candidate_position);
+  config->GetInt(prefix + "/page_size", &page_size);
   config->GetString(prefix + "/system_prompt", &system_prompt);
   config->GetDouble(prefix + "/temperature", &temperature);
   config->GetInt(prefix + "/max_tokens", &max_tokens);
@@ -68,6 +70,10 @@ bool AiCorrectionConfig::Load(rime::Config* config,
     max_tokens = 16;
   if (max_tokens > 2048)
     max_tokens = 2048;
+  if (page_size < 1)
+    page_size = 1;
+  if (page_size > 9)
+    page_size = 9;
 
   base_url = TrimUrl(base_url);
   if (api_path.empty() || api_path.front() != '/')

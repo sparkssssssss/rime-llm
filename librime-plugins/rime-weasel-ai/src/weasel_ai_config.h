@@ -48,6 +48,10 @@ struct AiCorrectionConfig {
   int max_input_length = 64;
   int context_window = 100;     // max chars of commit history sent, 0 = off
   std::string comment = "AI校准";
+  // "last" (default): append after all normal candidates
+  // "page1_end": insert at the end of the FIRST page (index page_size-1)
+  std::string candidate_position = "last";
+  int page_size = 5;
   std::string system_prompt;
   double temperature = 0.2;
   int max_tokens = 256;

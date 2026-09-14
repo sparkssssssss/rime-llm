@@ -12,6 +12,8 @@
 
 #include <rime/filter.h>
 
+#include <rime/config.h>
+
 namespace weasel_ai {
 
 class AiCorrectionFilter : public rime::Filter {
@@ -21,6 +23,10 @@ class AiCorrectionFilter : public rime::Filter {
   rime::an<rime::Translation> Apply(
       rime::an<rime::Translation> translation,
       rime::CandidateList* candidates) override;
+
+ private:
+  // Position where the AI candidate is inserted. kMaxSize_t = very end.
+  size_t insert_index_ = static_cast<size_t>(-1);
 };
 
 }  // namespace weasel_ai

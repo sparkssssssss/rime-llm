@@ -1,6 +1,9 @@
 #include "weasel_ai_filter.h"
 
 #include <rime/candidate.h>
+#include <rime/config.h>
+#include <rime/engine.h>
+#include <rime/schema.h>
 #include <rime/translation.h>
 
 namespace weasel_ai {
@@ -12,7 +15,9 @@ namespace {
 // order), AI candidates last (deduplicated against everything emitted).
 class AiLastTranslation : public rime::Translation {
  public:
-  explicit AiLastTranslation(rime::an<rime::Translation> translation) {
+  AiLastTranslation(rime::an<rime::Translation> translation,
+                    size_t insert_index)
+      : insert_index_(insert_index) {
     while (!translation->exhausted()) {
       auto cand = translation->Peek();
       if (!cand)
@@ -49,8 +54,21 @@ class AiLastTranslation : public rime::Translation {
   void Advance() {
     current_.reset();
     advanced_ = true;
+    // AI candidates are inserted at absolute output index insert_index_;
+    // static_cast<size_t>(-1) means very end.
+    if (ai_cursor_ < ai_.size() && emitted_count_ == insert_index_) {
+      auto cand = ai_[ai_cursor_++];
+      if (!IsDuplicate(cand->text())) {
+        emitted_.push_back(cand->text());
+        current_ = cand;
+        ++emitted_count_;
+        set_exhausted(false);
+        return;
+      }
+    }
     if (cursor_ < normal_.size()) {
       current_ = normal_[cursor_++];
+      ++emitted_count_;
       set_exhausted(false);
       return;
     }
@@ -60,6 +78,7 @@ class AiLastTranslation : public rime::Translation {
         continue;
       emitted_.push_back(cand->text());
       current_ = cand;
+      ++emitted_count_;
       set_exhausted(false);
       return;
     }
@@ -78,6 +97,8 @@ class AiLastTranslation : public rime::Translation {
   rime::CandidateList ai_;
   rime::CandidateList::size_type cursor_ = 0;
   rime::CandidateList::size_type ai_cursor_ = 0;
+  size_t insert_index_ = static_cast<size_t>(-1);
+  size_t emitted_count_ = 0;
   std::vector<rime::string> emitted_;
   rime::an<rime::Candidate> current_;
   bool advanced_ = false;
@@ -86,12 +107,39 @@ class AiLastTranslation : public rime::Translation {
 }  // namespace
 
 AiCorrectionFilter::AiCorrectionFilter(const rime::Ticket& ticket)
-    : Filter(ticket) {}
+    : Filter(ticket) {
+  // placement: "last" (default) or "page1_end"
+  std::string position;
+  int page_size = 5;
+  if (engine_ && engine_->schema()) {
+    rime::Config* config = engine_->schema()->config();
+    if (config) {
+      if (!config->GetString("ai_correction/candidate_position", &position)) {
+        rime::the<rime::Config> global(
+            rime::Config::Require("config")->Create("default"));
+        if (global)
+          global->GetString("ai_correction/candidate_position", &position);
+      }
+      if (!config->GetInt("ai_correction/page_size", &page_size)) {
+        rime::the<rime::Config> global(
+            rime::Config::Require("config")->Create("default"));
+        if (global)
+          global->GetInt("ai_correction/page_size", &page_size);
+      }
+    }
+  }
+  if (page_size < 1)
+    page_size = 1;
+  insert_index_ = (position == "page1_end") ? static_cast<size_t>(page_size - 1)
+                                            : static_cast<size_t>(-1);
+  LOG(INFO) << "[weasel_ai] filter placement=" << position
+            << " insert_index=" << insert_index_;
+}
 
 rime::an<rime::Translation> AiCorrectionFilter::Apply(
     rime::an<rime::Translation> translation,
     rime::CandidateList* candidates) {
-  auto filtered = rime::New<AiLastTranslation>(translation);
+  auto filtered = rime::New<AiLastTranslation>(translation, insert_index_);
   if (filtered->exhausted())
     return nullptr;
   return filtered;
