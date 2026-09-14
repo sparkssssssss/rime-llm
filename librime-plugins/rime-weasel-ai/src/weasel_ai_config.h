@@ -44,6 +44,7 @@ struct AiCorrectionConfig {
   std::string api_key_env;  // future: read key from environment variable
   int timeout_ms = 800;
   int max_candidates = 1;
+  int max_result_bytes = 512;  // per-candidate byte cap for AI output
   int min_input_length = 6;
   int max_input_length = 64;
   int context_window = 100;     // max chars of commit history sent, 0 = off

@@ -8,7 +8,6 @@ namespace weasel_ai {
 namespace {
 
 constexpr size_t kMaxResponseBytes = 512 * 1024;
-constexpr size_t kMaxCandidateBytes = 256;
 
 // UTF-8 text must not contain C0/C1 control characters (except nothing at
 // all for candidate text) and must decode as valid UTF-8.
@@ -169,7 +168,9 @@ std::string CorrectionService::BuildRequestBody(
 }
 
 CorrectionResponse CorrectionService::ParseResponseBody(
-    const std::string& body, size_t max_candidates) {
+    const std::string& body,
+    size_t max_candidates,
+    size_t max_candidate_bytes) {
   CorrectionResponse response;
   std::string error;
   JsonPtr root = JsonParse(body, &error);
@@ -232,7 +233,7 @@ CorrectionResponse CorrectionService::ParseResponseBody(
     if (!text->is_string())
       continue;
     const std::string& cand_text = text->as_string();
-    if (!IsSafeCandidateText(cand_text, kMaxCandidateBytes))
+    if (!IsSafeCandidateText(cand_text, max_candidate_bytes))
       continue;
     AiCandidate cand;
     cand.text = cand_text;
@@ -262,7 +263,8 @@ CorrectionResponse CorrectionService::Correct(
     return response;
   }
   return ParseResponseBody(http.body,
-                           static_cast<size_t>(config_.max_candidates));
+                           static_cast<size_t>(config_.max_candidates),
+                           static_cast<size_t>(config_.max_result_bytes));
 }
 
 bool IsSafeCandidateText(const std::string& text, size_t max_bytes) {

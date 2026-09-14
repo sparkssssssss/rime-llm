@@ -38,6 +38,7 @@ bool AiCorrectionConfig::Load(rime::Config* config,
   config->GetString(prefix + "/api_key_env", &api_key_env);
   config->GetInt(prefix + "/timeout_ms", &timeout_ms);
   config->GetInt(prefix + "/max_candidates", &max_candidates);
+  config->GetInt(prefix + "/max_result_bytes", &max_result_bytes);
   config->GetInt(prefix + "/min_input_length", &min_input_length);
   config->GetInt(prefix + "/max_input_length", &max_input_length);
   config->GetInt(prefix + "/context_window", &context_window);
@@ -56,6 +57,10 @@ bool AiCorrectionConfig::Load(rime::Config* config,
     max_candidates = 1;
   if (max_candidates > 5)
     max_candidates = 5;
+  if (max_result_bytes < 32)
+    max_result_bytes = 32;
+  if (max_result_bytes > 4096)
+    max_result_bytes = 4096;
   if (min_input_length < 0)
     min_input_length = 0;
   if (max_input_length < min_input_length)

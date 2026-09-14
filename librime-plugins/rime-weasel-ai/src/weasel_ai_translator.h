@@ -24,6 +24,7 @@ class AiCorrectionTranslator : public rime::Translator {
 
  private:
   rime::the<AiResultStore> store_;
+  std::string comment_ = "AI校准";
 };
 
 }  // namespace weasel_ai

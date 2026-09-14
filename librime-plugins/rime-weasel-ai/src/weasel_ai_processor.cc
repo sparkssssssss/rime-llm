@@ -58,6 +58,9 @@ std::string ClipContextForRequest(const rime::CommitHistory& history,
 AiCorrectionProcessor::AiCorrectionProcessor(const rime::Ticket& ticket)
     : Processor(ticket) {
   store_.reset(FindOrCreateStore(ticket.engine));
+  // A new component set means a (possibly reused) engine; drop any result
+  // left over from a previous session at the same address.
+  store_->Invalidate();
   LoadConfig();
 }
 
@@ -182,6 +185,9 @@ void AiCorrectionProcessor::TriggerCorrection(
   }
   AiResult result;
   result.input = segment_input;
+  result.seg_start = seg.start;
+  result.seg_end = seg.end;
+  result.has_range = true;
   if (response.ok) {
     result.candidates = std::move(response.candidates);
   }
@@ -198,22 +204,27 @@ void AiCorrectionProcessor::TriggerCorrection(
   bool refreshed = ctx->RefreshNonConfirmedComposition();
   LOG(INFO) << "[weasel_ai] RefreshNonConfirmedComposition -> " << refreshed;
 
-  // Move selection to the AI candidate so it is visible immediately (the
-  // candidate sits at the end of the list, far past the first page).
+  // Move the selection to the AI candidate so Weasel shows the page that
+  // contains it. The filter records the exact index; fall back to a bounded
+  // scan if it did not run (e.g. another filter short-circuited).
   if (refreshed) {
-    auto& seg2 = ctx->composition().back();
-    if (seg2.menu) {
-      for (size_t i = 0; i < 50; ++i) {
-        auto cand = seg2.menu->GetCandidateAt(i);
-        if (!cand)
-          break;
-        if (cand->type() == "ai_correction") {
-          if (ctx->Highlight(i)) {
-            LOG(INFO) << "[weasel_ai] highlighted AI candidate at index " << i;
+    size_t target = store_->ai_index();
+    if (target == AiResultStore::kNoIndex) {
+      auto& seg2 = ctx->composition().back();
+      if (seg2.menu) {
+        for (size_t i = 0; i < 20; ++i) {
+          auto cand = seg2.menu->GetCandidateAt(i);
+          if (!cand)
+            break;
+          if (cand->type() == "ai_correction") {
+            target = i;
+            break;
           }
-          break;
         }
       }
+    }
+    if (target != AiResultStore::kNoIndex && ctx->Highlight(target)) {
+      LOG(INFO) << "[weasel_ai] highlighted AI candidate at index " << target;
     }
   }
 }

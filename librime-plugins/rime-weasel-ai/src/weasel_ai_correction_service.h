@@ -17,6 +17,9 @@
 
 namespace weasel_ai {
 
+// Default per-candidate byte cap for AI output.
+constexpr size_t kDefaultMaxCandidateBytes = 512;
+
 struct AiCandidate {
   std::string text;
   double score = 0.0;
@@ -45,8 +48,10 @@ class CorrectionService {
   std::string BuildRequestBody(const CorrectionRequest& request) const;
 
   // Parses a chat-completion response body (exposed for tests).
-  static CorrectionResponse ParseResponseBody(const std::string& body,
-                                              size_t max_candidates);
+  static CorrectionResponse ParseResponseBody(
+      const std::string& body,
+      size_t max_candidates,
+      size_t max_candidate_bytes = kDefaultMaxCandidateBytes);
 
  private:
   AiCorrectionConfig config_;
