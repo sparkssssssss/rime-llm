@@ -183,6 +183,19 @@ CorrectionResponse CorrectionService::ParseResponseBody(
     return response;
   }
   const std::string& content_text = content->as_string();
+  if (content_text.empty()) {
+    // Reasoning models (DeepSeek-R1 style) put output in reasoning_content
+    // and may return empty content when max_tokens is exhausted by thinking.
+    const JsonPtr& reasoning = message->get("reasoning_content");
+    if (reasoning->is_string() && !reasoning->as_string().empty()) {
+      response.error =
+          "empty_content_with_reasoning: increase ai_correction/max_tokens "
+          "(e.g. 2048) or disable the model's thinking mode";
+    } else {
+      response.error = "empty_content";
+    }
+    return response;
+  }
   // The model may wrap JSON in a markdown fence; locate the outermost object.
   size_t begin = content_text.find('{');
   size_t end = content_text.rfind('}');
