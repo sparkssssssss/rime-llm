@@ -139,6 +139,66 @@ static void TestRequestBodyInvalidExtraParams() {
   assert(v->get("model")->as_string() == "m");
 }
 
+static void TestPromptPlaceholders() {
+  AiCorrectionConfig config;
+  config.model = "m";
+  config.system_prompt =
+      "规则：只返回JSON。\n拼音：{{pinyin}}\n当前候选：{{candidates}}\n"
+      "上下文：{{context}}\n输出：{\"candidates\":[{\"text\":\"句子\"}]}";
+  CorrectionService svc(config);
+  CorrectionRequest req;
+  req.input = "kudoulaibuji";
+  req.candidates = {"哭都来不及", "裤兜"};
+  req.committed_context = "他早就";
+  const std::string body = svc.BuildRequestBody(req);
+  std::string err;
+  auto v = JsonParse(body, &err);
+  assert(v && err.empty());
+  const std::string sys =
+      v->get("messages")->at(0)->get("content")->as_string();
+  assert(sys.find("{{pinyin}}") == std::string::npos);      // all replaced
+  assert(sys.find("kudoulaibuji") != std::string::npos);
+  assert(sys.find("哭都来不及；裤兜") != std::string::npos);
+  assert(sys.find("他早就") != std::string::npos);
+  const std::string user =
+      v->get("messages")->at(1)->get("content")->as_string();
+  // system prompt carries the payload, so the user turn stays short
+  assert(user.find("kudoulaibuji") == std::string::npos);
+}
+
+static void TestUserTemplate() {
+  AiCorrectionConfig config;
+  config.model = "m";
+  config.user_template = "拼音={{pinyin}};候选={{candidates}}";
+  CorrectionService svc(config);
+  CorrectionRequest req;
+  req.input = "nihao";
+  req.candidates = {"你好"};
+  const std::string body = svc.BuildRequestBody(req);
+  std::string err;
+  auto v = JsonParse(body, &err);
+  const std::string user =
+      v->get("messages")->at(1)->get("content")->as_string();
+  assert(user == "拼音=nihao;候选=你好");
+}
+
+static void TestDefaultUserMessageUnchanged() {
+  AiCorrectionConfig config;
+  config.model = "m";
+  config.system_prompt = "普通提示词，无占位符。";
+  CorrectionService svc(config);
+  CorrectionRequest req;
+  req.input = "nihao";
+  req.candidates = {"你好", "你"};
+  const std::string body = svc.BuildRequestBody(req);
+  std::string err;
+  auto v = JsonParse(body, &err);
+  const std::string user =
+      v->get("messages")->at(1)->get("content")->as_string();
+  assert(user.find("原始输入：nihao") == 0);
+  assert(user.find("当前候选：你好；你") != std::string::npos);
+}
+
 int main() {
   TestParseBasic();
   TestParseUnicodeEscape();
@@ -150,6 +210,9 @@ int main() {
   TestBadResponses();
   TestRequestBodyExtras();
   TestRequestBodyInvalidExtraParams();
+  TestPromptPlaceholders();
+  TestUserTemplate();
+  TestDefaultUserMessageUnchanged();
   std::cout << "all weasel_ai tests passed" << std::endl;
   return 0;
 }

@@ -68,3 +68,11 @@ patch:
   # 是否隐藏与现有候选重复的 AI 结果。默认 false（始终显示），这样即使
   # AI 与内置首选一致，你也能在候选栏看到"AI校准"确认；设 true 可去噪。
   # ai_correction/deduplicate: true
+  # 提示词里可用占位符，插件会按每次输入自动替换：
+  #   {{pinyin}} / {{input}}   当前拼音串
+  #   {{candidates}}           当前候选（；分隔）
+  #   {{context}}              已提交上下文
+  # 若 system_prompt/prompt_file 里含占位符，则视为"完整模板"，
+  # user 消息会自动精简为一句提示，避免数据重复。
+  # 也可单独自定义 user 消息模板（同样支持占位符）：
+  # ai_correction/user_template: '拼音={{pinyin}}\n候选={{candidates}}'

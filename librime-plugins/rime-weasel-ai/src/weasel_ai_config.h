@@ -58,6 +58,9 @@ struct AiCorrectionConfig {
   // inline YAML string. Relative paths resolve against the Rime user dir.
   // Precedence: prompt_file (if readable) > system_prompt > built-in default.
   std::string prompt_file;
+  // Optional user-message template. Supports {{pinyin}} {{candidates}} {{context}}.
+  // When empty, the built-in message format is used.
+  std::string user_template;
   double temperature = 0.2;
   int max_tokens = 256;
   // Optional request knobs. reasoning_effort="none" disables thinking on

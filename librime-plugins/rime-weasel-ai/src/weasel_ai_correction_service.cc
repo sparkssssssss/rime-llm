@@ -128,6 +128,40 @@ std::string ResolveApiKey(const AiCorrectionConfig& config) {
   return std::string();
 }
 
+// Replaces {{pinyin}}/{{input}}, {{candidates}} and {{context}} in a prompt
+// template. Users write self-contained prompts with these placeholders; the
+// plugin fills them per request.
+void ReplaceAll(std::string* text,
+                const std::string& from,
+                const std::string& to) {
+  if (from.empty())
+    return;
+  size_t pos = 0;
+  while ((pos = text->find(from, pos)) != std::string::npos) {
+    text->replace(pos, from.size(), to);
+    pos += to.size();
+  }
+}
+
+bool HasPlaceholders(const std::string& text) {
+  return text.find("{{pinyin}}") != std::string::npos ||
+         text.find("{{input}}") != std::string::npos ||
+         text.find("{{candidates}}") != std::string::npos ||
+         text.find("{{context}}") != std::string::npos;
+}
+
+std::string ExpandPlaceholders(const std::string& text,
+                               const std::string& input,
+                               const std::string& candidates,
+                               const std::string& context) {
+  std::string out = text;
+  ReplaceAll(&out, "{{pinyin}}", input);
+  ReplaceAll(&out, "{{input}}", input);
+  ReplaceAll(&out, "{{candidates}}", candidates);
+  ReplaceAll(&out, "{{context}}", context);
+  return out;
+}
+
 const char* kDefaultSystemPrompt =
     "你是中文拼音输入法的整句校准器。根据无空格拼音串和当前候选列表，"
     "输出与拼音逐音节严格对应、语义最自然的一句中文。规则："
@@ -155,21 +189,39 @@ std::string CorrectionService::BuildRequestBody(
 
   auto messages = JsonValue::MakeArray();
 
+  const std::string joined = JoinCandidatesForPrompt(request.candidates, 5);
+  const std::string& context = request.committed_context;
+  const std::string raw_system = config_.system_prompt.empty()
+                                     ? std::string(kDefaultSystemPrompt)
+                                     : config_.system_prompt;
+  // The prompt may be a self-contained template with {{pinyin}}/{{candidates}}.
+  const bool system_is_template = HasPlaceholders(raw_system);
+  const std::string system_content =
+      ExpandPlaceholders(raw_system, request.input, joined, context);
+
   auto sys = JsonValue::MakeObject();
   sys->set("role", JsonValue::MakeString("system"));
-  sys->set("content", JsonValue::MakeString(
-                          config_.system_prompt.empty() ? std::string(kDefaultSystemPrompt)
-                                                        : config_.system_prompt));
+  sys->set("content", JsonValue::MakeString(system_content));
   messages->push(sys);
 
+  std::string user_content;
+  if (!config_.user_template.empty()) {
+    // Explicit user template wins and receives the same substitutions.
+    user_content =
+        ExpandPlaceholders(config_.user_template, request.input, joined, context);
+  } else if (system_is_template) {
+    // The system prompt already carries input+candidates; avoid duplicating
+    // the whole payload in the user turn.
+    user_content = "请按系统提示的要求输出 JSON。";
+  } else {
+    user_content = "原始输入：" + request.input;
+    if (!joined.empty())
+      user_content += "\n当前候选：" + joined;
+    if (!context.empty())
+      user_content += "\n上下文：" + context;
+  }
   auto user = JsonValue::MakeObject();
   user->set("role", JsonValue::MakeString("user"));
-  std::string user_content = "原始输入：" + request.input;
-  std::string joined = JoinCandidatesForPrompt(request.candidates, 5);
-  if (!joined.empty())
-    user_content += "\n当前候选：" + joined;
-  if (!request.committed_context.empty())
-    user_content += "\n上下文：" + request.committed_context;
   user->set("content", JsonValue::MakeString(user_content));
   messages->push(user);
 

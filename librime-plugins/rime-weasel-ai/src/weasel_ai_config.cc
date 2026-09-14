@@ -47,6 +47,7 @@ bool AiCorrectionConfig::Load(rime::Config* config,
   config->GetInt(prefix + "/page_size", &page_size);
   config->GetString(prefix + "/system_prompt", &system_prompt);
   config->GetString(prefix + "/prompt_file", &prompt_file);
+  config->GetString(prefix + "/user_template", &user_template);
   config->GetDouble(prefix + "/temperature", &temperature);
   config->GetInt(prefix + "/max_tokens", &max_tokens);
   config->GetBool(prefix + "/deduplicate", &deduplicate);
