@@ -16,9 +16,9 @@
 //     ai_correction/api_key: sk-xxx
 //     ai_correction/timeout_ms: 800
 //
-// MVP supports a literal api_key for simplicity; a key reference (env var /
-// credential store) is a planned follow-up and `api_key_env` is already read
-// so the format can be finalized without breaking users.
+// api_key may be a literal secret, or leave it empty and set api_key_env to
+// the name of an environment variable that holds the key (preferred: keeps
+// secrets out of the YAML and out of logs).
 
 #ifndef WEASEL_AI_CONFIG_H_
 #define WEASEL_AI_CONFIG_H_
@@ -41,7 +41,7 @@ struct AiCorrectionConfig {
   std::string api_path = "/v1/chat/completions";
   std::string model;
   std::string api_key;      // literal secret (MVP)
-  std::string api_key_env;  // future: read key from environment variable
+  std::string api_key_env;  // env var name holding the key (used when api_key empty)
   int timeout_ms = 800;
   int max_candidates = 1;
   int max_result_bytes = 512;  // per-candidate byte cap for AI output

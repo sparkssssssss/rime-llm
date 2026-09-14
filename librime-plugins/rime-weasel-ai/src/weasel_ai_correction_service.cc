@@ -1,5 +1,7 @@
 #include "weasel_ai_correction_service.h"
 
+#include <cstdlib>
+
 #include "weasel_ai_http_client.h"
 #include "weasel_ai_json.h"
 
@@ -111,6 +113,19 @@ std::string ClipContext(const std::string& context, int max_chars) {
   return cut == 0 && static_cast<int>(chars) <= max_chars
              ? context
              : context.substr(cut);
+}
+
+// Literal api_key wins; otherwise read the key from the configured
+// environment variable so deployments can keep secrets out of YAML.
+std::string ResolveApiKey(const AiCorrectionConfig& config) {
+  if (!config.api_key.empty())
+    return config.api_key;
+  if (!config.api_key_env.empty()) {
+    const char* value = std::getenv(config.api_key_env.c_str());
+    if (value && *value)
+      return std::string(value);
+  }
+  return std::string();
 }
 
 const char* kDefaultSystemPrompt =
@@ -254,7 +269,7 @@ CorrectionResponse CorrectionService::Correct(
     const CorrectionRequest& request) const {
   CorrectionResponse response;
   std::string body = BuildRequestBody(request);
-  HttpRequestResult http = HttpPostJson(config_.endpoint_url(), config_.api_key,
+  HttpRequestResult http = HttpPostJson(config_.endpoint_url(), ResolveApiKey(config_),
                                         body, config_.timeout_ms,
                                         kMaxResponseBytes);
   if (!http.ok) {
