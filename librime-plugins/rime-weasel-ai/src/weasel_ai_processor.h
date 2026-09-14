@@ -37,6 +37,7 @@ class AiCorrectionProcessor : public rime::Processor {
 
  private:
   void LoadConfig();
+  void LoadSystemPromptFile();
   rime::string CurrentSegmentInput() const;
   void TriggerCorrection(const rime::string& segment_input);
 

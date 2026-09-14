@@ -82,3 +82,36 @@ rem 产物: librime\dist\lib\rime.dll
 - weasel：GPLv3（跟随上游）
 - librime：BSD 3-Clause（跟随上游）
 - librime-plugins/rime-weasel-ai：随本仓库发布，遵循上游兼容许可
+
+## 自定义 AI 提示词
+
+提示词支持三级配置（优先级从高到低）：
+
+1. **独立文本文件**（推荐）：`ai_correction/prompt_file: ai_prompt.txt`
+   - 相对路径基于 Rime 用户目录（`%AppData%\Rime` 或注册表 `RimeUserDir` 指定的目录）
+   - 用记事本编辑即可，**改完只需「重新部署」，不用重新编译 DLL**
+   - 支持 UTF-8（含 BOM）与换行，上限 8KB
+2. **配置内联**：`ai_correction/system_prompt: '一行提示词'`
+3. **程序内置默认**：内置提示词已包含"逐音节自查、禁止编造拼音中没有的字词、已有候选完全匹配时直接返回"等规则
+
+参考提示词见 `librime-plugins/rime-weasel-ai/example/ai_prompt.txt`。
+
+## 推理模型（reasoning model）注意事项
+
+如果使用 spark / deepseek-r1 这类带思考的模型，必须设置：
+
+```yaml
+ai_correction/reasoning_effort: none   # 关闭思考
+ai_correction/max_tokens: 256
+```
+
+否则思考会吃掉全部 token 导致 `content` 为空（实测 16 秒且无输出）。注意
+`reasoning_effort` 取值 `low`/`minimal` **无效**——思考文本会混进 `content`，
+导致 JSON 解析失败。
+
+## AI 候选显示位置
+
+```yaml
+ai_correction/candidate_position: page1_end   # 第一页最后一格（默认 last = 整个列表末尾）
+ai_correction/deduplicate: false              # 默认 false = 始终显示（即使与内置候选相同）
+```

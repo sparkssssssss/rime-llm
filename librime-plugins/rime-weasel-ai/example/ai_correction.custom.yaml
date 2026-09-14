@@ -55,9 +55,14 @@ patch:
   # 混进 content 导致 JSON 解析失败）。
   ai_correction/reasoning_effort: none
   ai_correction/max_tokens: 256
-  # 提示词（可自定义）。默认提示词已内置"逐音节自查、禁止编造拼音中没有的字词"，
-  # 实测能把整句校准准确率从偶发幻觉提升到稳定正确。
-  # ai_correction/system_prompt: '你的自定义提示词……'
+  # 提示词自定义（两种方式，任选其一）：
+  #   A. 独立文本文件（推荐，长提示词好读好改，改完只需"重新部署"，无需重新编译）
+  #      相对路径基于 Rime 用户目录（%AppData%\Rime 或你自定义的 D:\rime）
+  #      ai_correction/prompt_file: ai_prompt.txt
+  #   B. 直接写在配置里（单行，注意 YAML 引号转义）
+  #      ai_correction/system_prompt: '你的自定义提示词……'
+  # 优先级：prompt_file（文件可读时）> system_prompt > 程序内置默认
+  # 参考提示词见本目录 ai_prompt.txt
   # 网关专有参数可用 JSON 透传（会合并进请求体，可覆盖任意字段）：
   # ai_correction/extra_params: '{"top_p":0.8}'
   # 是否隐藏与现有候选重复的 AI 结果。默认 false（始终显示），这样即使

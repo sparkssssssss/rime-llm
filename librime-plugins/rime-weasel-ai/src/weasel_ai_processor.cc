@@ -1,12 +1,16 @@
 #include "weasel_ai_processor.h"
 
 
+#include <filesystem>
+#include <fstream>
+
 #include <rime/commit_history.h>
 #include <rime/config.h>
 #include <rime/context.h>
 #include <rime/engine.h>
 #include <rime/menu.h>
 #include <rime/schema.h>
+#include <rime/service.h>
 #include <rime/segmentation.h>
 
 #include "weasel_ai_correction_service.h"
@@ -107,6 +111,7 @@ void AiCorrectionProcessor::LoadConfig() {
                 << " reasoning_effort=" << config_.reasoning_effort;
     }
   }
+  LoadSystemPromptFile();
   if (!config_.extra_params.empty()) {
     std::string json_error;
     if (!JsonParse(config_.extra_params, &json_error)) {
@@ -140,6 +145,56 @@ void AiCorrectionProcessor::LoadConfig() {
     LOG(INFO) << "[weasel_ai] trigger parsed: keycode=0x" << std::hex
               << t.keycode() << std::dec << " modifier=0x" << t.modifier();
   }
+}
+
+// If ai_correction/prompt_file is set, load it and let it override the inline
+// prompt. Relative paths are resolved against the Rime user directory so the
+// file can simply sit next to default.custom.yaml.
+void AiCorrectionProcessor::LoadSystemPromptFile() {
+  if (config_.prompt_file.empty())
+    return;
+  namespace fs = std::filesystem;
+  fs::path path = config_.prompt_file;
+  std::error_code ec;
+  if (path.is_relative()) {
+    const fs::path user_dir = rime::Service::instance().deployer().user_data_dir;
+    if (!user_dir.empty())
+      path = user_dir / path;
+  }
+  if (!fs::exists(path, ec)) {
+    LOG(WARNING) << "[weasel_ai] ai_correction/prompt_file not found: "
+                 << path.string() << " (using inline/default prompt)";
+    return;
+  }
+  std::ifstream in(path, std::ios::binary);
+  if (!in) {
+    LOG(WARNING) << "[weasel_ai] ai_correction/prompt_file cannot be read: "
+                 << path.string();
+    return;
+  }
+  std::string text((std::istreambuf_iterator<char>(in)),
+                   std::istreambuf_iterator<char>());
+  // strip UTF-8 BOM and trim trailing whitespace
+  if (text.size() >= 3 && static_cast<unsigned char>(text[0]) == 0xEF &&
+      static_cast<unsigned char>(text[1]) == 0xBB &&
+      static_cast<unsigned char>(text[2]) == 0xBF)
+    text.erase(0, 3);
+  while (!text.empty() && (text.back() == '\n' || text.back() == '\r' ||
+                           text.back() == ' ' || text.back() == '\t'))
+    text.pop_back();
+  if (text.empty()) {
+    LOG(WARNING) << "[weasel_ai] ai_correction/prompt_file is empty: "
+                 << path.string();
+    return;
+  }
+  if (text.size() > 8192) {
+    LOG(WARNING) << "[weasel_ai] ai_correction/prompt_file too large ("
+                 << text.size() << " bytes); truncated to 8192";
+    text.resize(8192);
+  }
+  config_.system_prompt = std::move(text);
+  LOG(INFO) << "[weasel_ai] prompt loaded from file: " << path.string()
+            << " (" << config_.system_prompt.size() << " bytes)";
 }
 
 rime::string AiCorrectionProcessor::CurrentSegmentInput() const {

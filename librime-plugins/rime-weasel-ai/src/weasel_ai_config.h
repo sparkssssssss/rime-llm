@@ -54,6 +54,10 @@ struct AiCorrectionConfig {
   std::string candidate_position = "last";
   int page_size = 5;
   std::string system_prompt;
+  // Optional path to a text file holding the prompt. Easier to edit than an
+  // inline YAML string. Relative paths resolve against the Rime user dir.
+  // Precedence: prompt_file (if readable) > system_prompt > built-in default.
+  std::string prompt_file;
   double temperature = 0.2;
   int max_tokens = 256;
   // Optional request knobs. reasoning_effort="none" disables thinking on
