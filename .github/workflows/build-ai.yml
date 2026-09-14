@@ -13,11 +13,12 @@ jobs:
       BOOST_ROOT: ${{ github.workspace }}\librime\deps\boost_1_84_0
       CMAKE_GENERATOR: "Visual Studio 17 2022"
       PLATFORM_TOOLSET: v143
-      # Same plugin set as librime's official release build. Without these the
-      # resulting rime.dll silently loses lua (rime_ice has 18 lua_* components),
-      # octagram (grammar / long-sentence model) and predict - which also makes
-      # the built-in candidates much worse than the official build.
-      RIME_PLUGINS: hchunhui/librime-lua lotem/librime-octagram rime/librime-predict
+      # NOTE: RIME_PLUGINS is deliberately NOT set here. librime's
+      # plugins/CMakeLists.txt switches to an explicit plugin list as soon as
+      # that env var exists, which would SKIP the auto-glob and silently drop
+      # rime-weasel-ai. It is set only inside the plugin-install step, which
+      # runs before CMake configures, and cmake then discovers every directory
+      # under librime/plugins (lua, octagram, predict, rime-weasel-ai).
     steps:
       - name: Checkout (with submodules)
         uses: actions/checkout@v4
@@ -79,8 +80,13 @@ jobs:
         run: |
           cd librime
           if not exist plugins mkdir plugins
+          rem Same plugin set as librime's official release build. Must stay
+          rem scoped to this step so CMake keeps auto-discovering plugins/.
+          set RIME_PLUGINS=hchunhui/librime-lua lotem/librime-octagram rime/librime-predict
           call action-install-plugins-windows.bat
           if errorlevel 1 exit /b 1
+          rem make sure the env var does not leak into later steps
+          set RIME_PLUGINS=
           echo --- plugins dir ---
           dir /b plugins
           rem librime-lua needs Lua 5.4 sources in thirdparty/
@@ -89,16 +95,39 @@ jobs:
             exit /b 1
           )
 
+      - name: Audit plugins before configure
+        shell: pwsh
+        run: |
+          $dirs = @('lua', 'octagram', 'predict')
+          foreach ($d in $dirs) {
+            $p = "librime\plugins\$d\CMakeLists.txt"
+            if (-not (Test-Path $p)) { throw "cloned plugin missing: $p" }
+            Write-Host "cloned plugin OK: $d"
+          }
+          if (Test-Path "librime\plugins\lua\thirdparty\lua5.4\lua.h") {
+            Write-Host "lua sources OK"
+          } else {
+            throw "lua sources missing under librime\plugins\lua\thirdparty"
+          }
+          if ($env:RIME_PLUGINS) { throw "RIME_PLUGINS leaked into the CMake environment: $env:RIME_PLUGINS" }
+          Write-Host "RIME_PLUGINS unset -> CMake will auto-glob librime/plugins"
+
       - name: Inject main-repo plugins into librime
         shell: cmd
         run: inject-plugins.bat
 
-      - name: Assert plugin sources are in place
+      - name: Assert all four plugin sources are in place
         shell: pwsh
         run: |
-          $p = "librime\plugins\rime-weasel-ai\src\weasel_ai_module.cc"
-          if (-not (Test-Path $p)) { throw "plugin source not found at $p - injection failed" }
-          Write-Host "plugin source OK: $p"
+          $dirs = @('lua', 'octagram', 'predict', 'rime-weasel-ai')
+          foreach ($d in $dirs) {
+            $p = "librime\plugins\$d\CMakeLists.txt"
+            if (-not (Test-Path $p)) { throw "plugin directory missing after injection: $p" }
+            Write-Host "plugin dir OK: $d"
+          }
+          $m = "librime\plugins\rime-weasel-ai\src\weasel_ai_module.cc"
+          if (-not (Test-Path $m)) { throw "AI plugin source missing: $m" }
+          Write-Host "all four plugins ready for CMake"
 
       - name: Build librime (x64 only, with weasel_ai plugin)
         shell: cmd
