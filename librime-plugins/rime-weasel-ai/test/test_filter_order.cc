@@ -311,6 +311,31 @@ void TestStaleResultNotServed() {
   std::cout << "  stale result dropped OK: " << Join(out) << std::endl;
 }
 
+// Regression for the use-after-free crash: the registry owns the store and
+// components only borrow it. A rebuild (lookup again) must return the SAME
+// live instance with its data intact.
+void TestStoreOwnershipAcrossRebuilds() {
+  Engine engine;
+  AiResultStore* first = FindOrCreateStore(&engine);
+  AiResult result;
+  result.input = "nihao";
+  result.seg_start = 0;
+  result.seg_end = 5;
+  result.has_range = true;
+  weasel_ai::AiCandidate c;
+  c.text = "你好";
+  result.candidates.push_back(c);
+  first->Commit(first->BeginRequest(), std::move(result));
+
+  AiResultStore* second = FindOrCreateStore(&engine);
+  assert(first == second);          // same instance, not a new one
+  assert(second->HasResult());      // still alive, data intact
+  assert(second->Match("nihao") != nullptr);
+  assert(second->Match("nihao")->candidates[0].text == "你好");
+  std::cout << "  store ownership OK (registry owns, components borrow)"
+            << std::endl;
+}
+
 void TestCommentFromStore() {
   Fixture f;
   rime::Config::Deployed().Set("ai_correction/candidate_position", "page1_end");
@@ -347,6 +372,7 @@ int main() {
   TestNoResultPassthrough();
   TestStaleResultNotServed();
   TestCommentFromStore();
+  TestStoreOwnershipAcrossRebuilds();
   std::cout << "all filter order tests passed" << std::endl;
   return 0;
 }

@@ -11,7 +11,7 @@ namespace weasel_ai {
 
 AiCorrectionTranslator::AiCorrectionTranslator(const rime::Ticket& ticket)
     : Translator(ticket) {
-  store_.reset(FindOrCreateStore(ticket.engine));
+  store_ = FindOrCreateStore(ticket.engine);
   // comment label is configurable; schema config first, then default config
   comment_ = "AI校准";
   if (engine_ && engine_->schema()) {

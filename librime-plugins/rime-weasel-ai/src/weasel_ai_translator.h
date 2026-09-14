@@ -23,7 +23,7 @@ class AiCorrectionTranslator : public rime::Translator {
                                     const rime::Segment& segment) override;
 
  private:
-  rime::the<AiResultStore> store_;
+  AiResultStore* store_ = nullptr;  // borrowed from the registry
   std::string comment_ = "AI校准";
 };
 

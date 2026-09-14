@@ -42,7 +42,7 @@ class AiCorrectionProcessor : public rime::Processor {
   void TriggerCorrection(const rime::string& segment_input);
 
   AiCorrectionConfig config_;
-  rime::the<AiResultStore> store_;
+  AiResultStore* store_ = nullptr;  // borrowed from the registry
   std::vector<rime::KeyEvent> triggers_;
   bool trigger_loaded_ = false;
 };

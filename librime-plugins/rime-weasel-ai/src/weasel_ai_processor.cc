@@ -62,10 +62,12 @@ std::string ClipContextForRequest(const rime::CommitHistory& history,
 
 AiCorrectionProcessor::AiCorrectionProcessor(const rime::Ticket& ticket)
     : Processor(ticket) {
-  store_.reset(FindOrCreateStore(ticket.engine));
+  // Borrowed pointer: the registry owns the store (see store_registry.h).
+  store_ = FindOrCreateStore(ticket.engine);
   // A new component set means a (possibly reused) engine; drop any result
   // left over from a previous session at the same address.
-  store_->Invalidate();
+  if (store_)
+    store_->Invalidate();
   LoadConfig();
 }
 
