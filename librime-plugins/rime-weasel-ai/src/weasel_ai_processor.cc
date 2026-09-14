@@ -10,6 +10,7 @@
 #include <rime/segmentation.h>
 
 #include "weasel_ai_correction_service.h"
+#include "weasel_ai_json.h"
 #include "weasel_ai_store_registry.h"
 
 namespace weasel_ai {
@@ -101,7 +102,17 @@ void AiCorrectionProcessor::LoadConfig() {
     } else {
       LOG(INFO) << "[weasel_ai] config loaded from default: model="
                 << config_.model << " trigger=" << config_.trigger_key
-                << " timeout_ms=" << config_.timeout_ms;
+                << " timeout_ms=" << config_.timeout_ms
+                << " max_tokens=" << config_.max_tokens
+                << " reasoning_effort=" << config_.reasoning_effort;
+    }
+  }
+  if (!config_.extra_params.empty()) {
+    std::string json_error;
+    if (!JsonParse(config_.extra_params, &json_error)) {
+      LOG(WARNING) << "[weasel_ai] ai_correction/extra_params is not valid "
+                      "JSON and will be ignored: "
+                   << json_error;
     }
   }
   triggers_.clear();

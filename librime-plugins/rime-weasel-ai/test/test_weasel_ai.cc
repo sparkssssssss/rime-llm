@@ -104,6 +104,41 @@ static void TestBadResponses() {
   assert(!r4.ok);  // no candidates key
 }
 
+static void TestRequestBodyExtras() {
+  AiCorrectionConfig config;
+  config.model = "m";
+  config.reasoning_effort = "none";
+  config.extra_params =
+      R"({"top_p":0.8,"chat_template_kwargs":{"enable_thinking":false}})";
+  CorrectionService svc(config);
+  CorrectionRequest req;
+  req.input = "ni hao";
+  const std::string body = svc.BuildRequestBody(req);
+  std::string err;
+  auto v = JsonParse(body, &err);
+  assert(v && err.empty());
+  assert(v->get("reasoning_effort")->as_string() == "none");
+  assert(v->get("top_p")->as_number() > 0.79);
+  assert(v->get("chat_template_kwargs")->get("enable_thinking")->as_bool() ==
+         false);
+  assert(v->get("model")->as_string() == "m");
+  assert(v->get("stream")->as_bool() == false);
+}
+
+static void TestRequestBodyInvalidExtraParams() {
+  AiCorrectionConfig config;
+  config.model = "m";
+  config.extra_params = "{not json";
+  CorrectionService svc(config);
+  CorrectionRequest req;
+  req.input = "ni hao";
+  const std::string body = svc.BuildRequestBody(req);
+  std::string err;
+  auto v = JsonParse(body, &err);  // must still be valid JSON
+  assert(v && err.empty());
+  assert(v->get("model")->as_string() == "m");
+}
+
 int main() {
   TestParseBasic();
   TestParseUnicodeEscape();
@@ -113,6 +148,8 @@ int main() {
   TestParseChatCompletionMarkdownFence();
   TestRejectControlChars();
   TestBadResponses();
+  TestRequestBodyExtras();
+  TestRequestBodyInvalidExtraParams();
   std::cout << "all weasel_ai tests passed" << std::endl;
   return 0;
 }

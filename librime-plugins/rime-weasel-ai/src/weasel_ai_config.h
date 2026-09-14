@@ -56,6 +56,11 @@ struct AiCorrectionConfig {
   std::string system_prompt;
   double temperature = 0.2;
   int max_tokens = 256;
+  // Optional request knobs. reasoning_effort="none" disables thinking on
+  // reasoning models (huge latency win). extra_params is a raw JSON object
+  // merged into the request body last, for gateway-specific options.
+  std::string reasoning_effort;
+  std::string extra_params;
 
   std::string endpoint_url() const;
 };

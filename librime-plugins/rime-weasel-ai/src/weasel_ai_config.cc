@@ -48,6 +48,8 @@ bool AiCorrectionConfig::Load(rime::Config* config,
   config->GetString(prefix + "/system_prompt", &system_prompt);
   config->GetDouble(prefix + "/temperature", &temperature);
   config->GetInt(prefix + "/max_tokens", &max_tokens);
+  config->GetString(prefix + "/reasoning_effort", &reasoning_effort);
+  config->GetString(prefix + "/extra_params", &extra_params);
 
   if (timeout_ms < 100)
     timeout_ms = 100;

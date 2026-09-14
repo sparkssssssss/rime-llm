@@ -179,6 +179,25 @@ std::string CorrectionService::BuildRequestBody(
   root->set("max_tokens", JsonValue::MakeNumber(config_.max_tokens));
   root->set("stream", JsonValue::MakeBool(false));
 
+  if (!config_.reasoning_effort.empty()) {
+    root->set("reasoning_effort",
+              JsonValue::MakeString(config_.reasoning_effort));
+  }
+  // extra_params is merged last so it can override any field above.
+  if (!config_.extra_params.empty()) {
+    std::string parse_error;
+    JsonPtr extra = JsonParse(config_.extra_params, &parse_error);
+    if (extra && extra->is_object()) {
+      for (const auto& kv : extra->RawMembers()) {
+        if (kv.second)
+          root->set(kv.first, kv.second);
+      }
+    }
+    // Invalid JSON is ignored on purpose: a bad extra_params must never
+    // break the request (logged by the caller, not here, to keep this
+    // translation unit free of logging dependencies).
+  }
+
   return root->Dump();
 }
 
