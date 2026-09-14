@@ -111,7 +111,10 @@ class AiInsertTranslation : public rime::Translation {
 };
 
 std::string ReadPlacementConfig(rime::Engine* engine, int* page_size) {
-  std::string position = "last";
+  // The ai_correction node normally lives in default.yaml (patched via
+  // default.custom.yaml), NOT in the schema file, so every read must fall
+  // back to the deployed default config - same rule the processor follows.
+  std::string position;
   int size = 0;
   rime::Config* config =
       (engine && engine->schema()) ? engine->schema()->config() : nullptr;
@@ -119,15 +122,20 @@ std::string ReadPlacementConfig(rime::Engine* engine, int* page_size) {
     config->GetString("ai_correction/candidate_position", &position);
     config->GetInt("ai_correction/page_size", &size);
   }
+  rime::the<rime::Config> global(
+      rime::Config::Require("config")->Create("default"));
+  if (position.empty() && global)
+    global->GetString("ai_correction/candidate_position", &position);
+  if (size <= 0 && global)
+    global->GetInt("ai_correction/page_size", &size);
+
+  if (position.empty())
+    position = "last";
   if (size <= 0) {
-    // Prefer the schema's real page size; fall back to the global default.
+    // Prefer the schema's real page size, then the global menu setting.
     size = (engine && engine->schema()) ? engine->schema()->page_size() : 5;
-    if (config) {
-      rime::the<rime::Config> global(
-          rime::Config::Require("config")->Create("default"));
-      if (global)
-        global->GetInt("menu/page_size", &size);
-    }
+    if (global)
+      global->GetInt("menu/page_size", &size);
   }
   if (size < 1)
     size = 1;
@@ -186,6 +194,9 @@ rime::an<rime::Translation> AiCorrectionFilter::Apply(
         "ai_correction", start, end, cand.text, "AI校准"));
   }
 
+  LOG(INFO) << "[weasel_ai] filter inserting " << ai_candidates.size()
+            << " AI candidate(s) at index " << insert_index_
+            << " (range " << start << "-" << end << ")";
   store_->clear_ai_index();
   auto filtered = rime::New<AiInsertTranslation>(
       translation, std::move(ai_candidates), insert_index_, store_);
