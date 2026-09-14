@@ -86,3 +86,8 @@ patch:
   # ai_correction/mode: rerank
   # ai_correction/rerank_pool: 9          # 提供给模型挑选的候选数量
   # ai_correction/rerank_prompt: '...'     # 可选：自定义重排提示词
+  # 重排模式下是否允许"最小修复"（同音字替换）：
+  #   true（默认）：可把所选候选里的个别字换成同音字（如 效果→笑过、崩快→崩溃），
+  #                但**字数必须完全相同**，模型无法增删词语；
+  #   false       ：严格只挑选、一个字的改动都不允许。
+  # ai_correction/allow_repair: false
