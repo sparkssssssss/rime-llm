@@ -189,12 +189,14 @@ void AiCorrectionProcessor::TriggerCorrection(
   // but the guard keeps semantics correct for the future async manager).
   if (!store_->Commit(token, std::move(result)))
     return;
+  LOG(INFO) << "[weasel_ai] result committed; refreshing non-confirmed composition";
 
   // Re-run translation for the unconfirmed tail so the menu picks up the
   // stored AI result. RefreshNonConfirmedComposition re-opens unconfirmed
   // segments and fires the update notifier; Weasel then repaints through its
   // normal ProcessKeyEvent path.
-  ctx->RefreshNonConfirmedComposition();
+  bool refreshed = ctx->RefreshNonConfirmedComposition();
+  LOG(INFO) << "[weasel_ai] RefreshNonConfirmedComposition -> " << refreshed;
 }
 
 rime::ProcessResult AiCorrectionProcessor::ProcessKeyEvent(

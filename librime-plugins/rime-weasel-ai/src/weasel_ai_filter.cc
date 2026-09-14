@@ -17,12 +17,15 @@ class AiLastTranslation : public rime::Translation {
       auto cand = translation->Peek();
       if (!cand)
         break;
-      if (cand->type() == "ai_correction")
+      if (cand->type() == "ai_correction") {
         ai_.push_back(cand);
-      else
+      } else {
         normal_.push_back(cand);
+      }
       translation->Next();
     }
+    LOG(INFO) << "[weasel_ai] filter: normal=" << normal_.size()
+              << " ai=" << ai_.size();
     if (normal_.empty() && ai_.empty())
       set_exhausted(true);
   }

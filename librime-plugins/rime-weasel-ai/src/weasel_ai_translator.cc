@@ -17,8 +17,14 @@ rime::an<rime::Translation> AiCorrectionTranslator::Query(
   if (!segment.HasTag("abc"))
     return nullptr;
   const AiResult* result = store_->Match(input);
-  if (!result)
+  if (!result) {
+    static thread_local int quiet = 0;
+    if (++quiet % 50 == 1)
+      LOG(INFO) << "[weasel_ai] translator: no stored result for input";
     return nullptr;
+  }
+  LOG(INFO) << "[weasel_ai] translator: serving " << result->candidates.size()
+            << " stored candidates for input";
   auto translation = rime::New<rime::FifoTranslation>();
   for (const auto& cand : result->candidates) {
     auto candidate = rime::New<rime::SimpleCandidate>(
