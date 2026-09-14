@@ -76,3 +76,13 @@ patch:
   # user 消息会自动精简为一句提示，避免数据重复。
   # 也可单独自定义 user 消息模板（同样支持占位符）：
   # ai_correction/user_template: '拼音={{pinyin}}\n候选={{candidates}}'
+
+  # ---- 模式选择（重要）----
+  # generate（默认）：让模型"生成"整句校准结果 —— 需要较强的模型（云端）。
+  # rerank：只让模型"从候选里挑一个" ——
+  #   * 实测本地小模型（qwen3.5-35b / qwen3.8-27b）也能 6/6 全对，且更快
+  #   * 模型只能从候选列表里选，**物理上不可能幻觉**（不会凭空造词）
+  #   * 若模型选中的就是当前第一候选，则不添加任何 AI 候选（无冗余）
+  # ai_correction/mode: rerank
+  # ai_correction/rerank_pool: 9          # 提供给模型挑选的候选数量
+  # ai_correction/rerank_prompt: '...'     # 可选：自定义重排提示词

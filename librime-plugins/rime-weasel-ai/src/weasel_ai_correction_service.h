@@ -35,6 +35,9 @@ struct CorrectionResponse {
   bool ok = false;          // request completed and at least one candidate parsed
   std::string error;        // machine-readable reason when !ok
   std::vector<AiCandidate> candidates;
+  // rerank mode: index the model picked inside the submitted candidate list
+  // (-1 when not applicable / unparseable).
+  int picked_index = -1;
 };
 
 class CorrectionService {
@@ -54,6 +57,9 @@ class CorrectionService {
       const std::string& body,
       size_t max_candidates,
       size_t max_candidate_bytes = kDefaultMaxCandidateBytes);
+
+  // Parses a rerank reply: {"index": k, "text": "..."} (text optional).
+  static int ParseRerankIndex(const std::string& body);
 
  private:
   AiCorrectionConfig config_;

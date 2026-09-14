@@ -61,6 +61,12 @@ struct AiCorrectionConfig {
   // Optional user-message template. Supports {{pinyin}} {{candidates}} {{context}}.
   // When empty, the built-in message format is used.
   std::string user_template;
+  // "generate" (default): the model writes the corrected sentence.
+  // "rerank": the model only picks one of the candidates we send - far easier
+  // for small local models and halluzination-free by construction.
+  std::string mode = "generate";
+  int rerank_pool = 9;       // how many candidates to offer in rerank mode
+  std::string rerank_prompt;  // optional custom rerank system prompt
   double temperature = 0.2;
   int max_tokens = 256;
   // Optional request knobs. reasoning_effort="none" disables thinking on

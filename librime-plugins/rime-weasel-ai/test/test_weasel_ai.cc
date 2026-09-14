@@ -222,6 +222,52 @@ static void TestFallbackRejectsExplanations() {
   }
 }
 
+static void TestRerankRequest() {
+  AiCorrectionConfig config;
+  config.model = "m";
+  config.mode = "rerank";
+  config.rerank_pool = 3;
+  CorrectionService svc(config);
+  CorrectionRequest req;
+  req.input = "tadediannaobengkuile";
+  req.candidates = {"他的电脑崩快了", "他的电脑崩溃了", "他的电脑"};
+  const std::string body = svc.BuildRequestBody(req);
+  std::string err;
+  auto v = JsonParse(body, &err);
+  assert(v && err.empty());
+  const std::string user =
+      v->get("messages")->at(1)->get("content")->as_string();
+  assert(user.find("0. 他的电脑崩快了") != std::string::npos);
+  assert(user.find("1. 他的电脑崩溃了") != std::string::npos);
+  assert(user.find("index") != std::string::npos);
+  const std::string sys =
+      v->get("messages")->at(0)->get("content")->as_string();
+  assert(sys.find("只能从候选列表中选择") != std::string::npos);
+}
+
+static void TestRerankIndexParsing() {
+  // Builds a chat-completion envelope with the given reply body properly
+  // escaped as a JSON string.
+  auto wrap = [](const std::string& inner) {
+    std::string escaped;
+    for (char c : inner) {
+      if (c == '"')
+        escaped += "\\\"";
+      else if (c == '\\')
+        escaped += "\\\\";
+      else
+        escaped += c;
+    }
+    return "{\"choices\":[{\"message\":{\"content\":\"" + escaped +
+           "\"}}]}";
+  };
+  assert(CorrectionService::ParseRerankIndex(wrap("{\"index\": 2}")) == 2);
+  assert(CorrectionService::ParseRerankIndex(wrap("{\"index\": 0}")) == 0);
+  assert(CorrectionService::ParseRerankIndex(wrap("{\"index\": \"1\"}")) == 1);
+  assert(CorrectionService::ParseRerankIndex(wrap("不是JSON")) == -1);
+  assert(CorrectionService::ParseRerankIndex(wrap("{}")) == -1);
+}
+
 int main() {
   TestParseBasic();
   TestParseUnicodeEscape();
@@ -238,6 +284,8 @@ int main() {
   TestDefaultUserMessageUnchanged();
   TestPlainSentenceFallback();
   TestFallbackRejectsExplanations();
+  TestRerankRequest();
+  TestRerankIndexParsing();
   std::cout << "all weasel_ai tests passed" << std::endl;
   return 0;
 }

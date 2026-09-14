@@ -48,6 +48,9 @@ bool AiCorrectionConfig::Load(rime::Config* config,
   config->GetString(prefix + "/system_prompt", &system_prompt);
   config->GetString(prefix + "/prompt_file", &prompt_file);
   config->GetString(prefix + "/user_template", &user_template);
+  config->GetString(prefix + "/mode", &mode);
+  config->GetInt(prefix + "/rerank_pool", &rerank_pool);
+  config->GetString(prefix + "/rerank_prompt", &rerank_prompt);
   config->GetDouble(prefix + "/temperature", &temperature);
   config->GetInt(prefix + "/max_tokens", &max_tokens);
   config->GetBool(prefix + "/deduplicate", &deduplicate);
@@ -62,6 +65,12 @@ bool AiCorrectionConfig::Load(rime::Config* config,
     max_candidates = 1;
   if (max_candidates > 5)
     max_candidates = 5;
+  if (mode != "rerank")
+    mode = "generate";
+  if (rerank_pool < 2)
+    rerank_pool = 2;
+  if (rerank_pool > 20)
+    rerank_pool = 20;
   if (max_result_bytes < 32)
     max_result_bytes = 32;
   if (max_result_bytes > 4096)

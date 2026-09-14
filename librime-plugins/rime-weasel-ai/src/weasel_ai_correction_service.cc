@@ -217,6 +217,13 @@ bool LooksLikePlainSentence(const std::string& raw, std::string* out) {
   return true;
 }
 
+const char* kDefaultRerankPrompt =
+    "你是中文拼音输入法的候选重排器。给定拼音串和候选列表，选出与拼音逐音节"
+    "对应、整句语义最通顺的一项。规则："
+    "1) 只能从候选列表中选择，不得改写、拼接或新增文字；"
+    "2) 语义通顺优先于词语常见程度；"
+    "3) 只输出JSON：{\"index\": 序号}（序号从0开始），不要解释。";
+
 const char* kDefaultSystemPrompt =
     "你是中文拼音输入法的整句校准器。根据无空格拼音串和当前候选列表，"
     "输出与拼音逐音节严格对应、语义最自然的一句中文。规则："
@@ -245,6 +252,51 @@ std::string CorrectionService::BuildRequestBody(
   auto messages = JsonValue::MakeArray();
 
   const std::string joined = JoinCandidatesForPrompt(request.candidates, 5);
+
+  if (config_.mode == "rerank") {
+    // Selection task: the model may only pick from the submitted candidates,
+    // so hallucinated characters are impossible.
+    const std::string sys_text = config_.rerank_prompt.empty()
+                                     ? std::string(kDefaultRerankPrompt)
+                                     : config_.rerank_prompt;
+    auto sys = JsonValue::MakeObject();
+    sys->set("role", JsonValue::MakeString("system"));
+    sys->set("content", JsonValue::MakeString(sys_text));
+    messages->push(sys);
+
+    std::string listing;
+    const size_t pool = request.candidates.size();
+    for (size_t i = 0; i < pool; ++i) {
+      listing += std::to_string(i) + ". " + request.candidates[i] + "\n";
+    }
+    std::string user_text = "拼音：" + request.input + "\n候选：\n" + listing;
+    if (!request.committed_context.empty())
+      user_text += "上下文：" + request.committed_context + "\n";
+    user_text += "请只输出JSON：{\"index\": 序号}";
+    auto user = JsonValue::MakeObject();
+    user->set("role", JsonValue::MakeString("user"));
+    user->set("content", JsonValue::MakeString(user_text));
+    messages->push(user);
+
+    root->set("messages", messages);
+    root->set("temperature", JsonValue::MakeNumber(0.1));
+    root->set("max_tokens", JsonValue::MakeNumber(128));
+    root->set("stream", JsonValue::MakeBool(false));
+    if (include_reasoning_effort && !config_.reasoning_effort.empty())
+      root->set("reasoning_effort",
+                JsonValue::MakeString(config_.reasoning_effort));
+    if (!config_.extra_params.empty()) {
+      std::string parse_error;
+      JsonPtr extra = JsonParse(config_.extra_params, &parse_error);
+      if (extra && extra->is_object()) {
+        for (const auto& kv : extra->RawMembers()) {
+          if (kv.second)
+            root->set(kv.first, kv.second);
+        }
+      }
+    }
+    return root->Dump();
+  }
   const std::string& context = request.committed_context;
   const std::string raw_system = config_.system_prompt.empty()
                                      ? std::string(kDefaultSystemPrompt)
@@ -305,6 +357,41 @@ std::string CorrectionService::BuildRequestBody(
   }
 
   return root->Dump();
+}
+
+int CorrectionService::ParseRerankIndex(const std::string& body) {
+  std::string error;
+  JsonPtr root = JsonParse(body, &error);
+  if (!root)
+    return -1;
+  const JsonPtr& choices = root->get("choices");
+  if (!choices->is_array() || choices->size() == 0)
+    return -1;
+  const JsonPtr& message = choices->at(0)->get("message");
+  if (!message || !message->is_object())
+    return -1;
+  const JsonPtr& content = message->get("content");
+  if (!content->is_string())
+    return -1;
+  const std::string& text = content->as_string();
+  const size_t begin = text.find('{');
+  const size_t end = text.rfind('}');
+  if (begin == std::string::npos || end == std::string::npos || end <= begin)
+    return -1;
+  JsonPtr payload = JsonParse(text.substr(begin, end - begin + 1), &error);
+  if (!payload || !payload->is_object())
+    return -1;
+  const JsonPtr& index = payload->get("index");
+  if (index->is_number())
+    return static_cast<int>(index->as_number());
+  if (index->is_string()) {
+    try {
+      return std::stoi(index->as_string());
+    } catch (...) {
+      return -1;
+    }
+  }
+  return -1;
 }
 
 CorrectionResponse CorrectionService::ParseResponseBody(
@@ -414,6 +501,39 @@ CorrectionResponse CorrectionService::ParseResponseBody(
 
 CorrectionResponse CorrectionService::Correct(
     const CorrectionRequest& request) const {
+  if (config_.mode == "rerank") {
+    CorrectionResponse reranked;
+    std::string body = BuildRequestBody(request);
+    HttpRequestResult http =
+        HttpPostJson(config_.endpoint_url(), ResolveApiKey(config_), body,
+                     config_.timeout_ms, kMaxResponseBytes);
+    if (!http.ok) {
+      reranked.error = http.error.empty()
+                           ? ("http_" + std::to_string(http.status_code))
+                           : http.error;
+      return reranked;
+    }
+    const int index = ParseRerankIndex(http.body);
+    reranked.picked_index = index;
+    if (index < 0 || index >= static_cast<int>(request.candidates.size())) {
+      reranked.error = "rerank_index_out_of_range";
+      return reranked;
+    }
+    if (index == 0) {
+      // The model agrees with the default first candidate: nothing to add.
+      reranked.error = "rerank_no_change";
+      return reranked;
+    }
+    AiCandidate picked;
+    picked.text = request.candidates[index];
+    picked.score = 1.0;
+    reranked.candidates.push_back(std::move(picked));
+    reranked.ok = !picked.text.empty();
+    if (!reranked.ok)
+      reranked.error = "rerank_empty_candidate";
+    return reranked;
+  }
+
   CorrectionResponse response;
   bool include_effort = !config_.reasoning_effort.empty();
   const int attempts = include_effort ? 2 : 1;

@@ -228,8 +228,12 @@ void AiCorrectionProcessor::TriggerCorrection(
   CorrectionRequest request;
   request.input = segment_input;
   // Existing candidates from the current menu (dedup happens in the filter).
+  const size_t pool =
+      config_.mode == "rerank"
+          ? static_cast<size_t>(config_.rerank_pool < 2 ? 2 : config_.rerank_pool)
+          : static_cast<size_t>(5);
   if (seg.menu) {
-    for (size_t i = 0; i < 5; ++i) {
+    for (size_t i = 0; i < pool; ++i) {
       auto cand = seg.menu->GetCandidateAt(i);
       if (!cand)
         break;
@@ -246,8 +250,13 @@ void AiCorrectionProcessor::TriggerCorrection(
   CorrectionService service(config_);
   CorrectionResponse response = service.Correct(request);
   if (response.ok) {
-    LOG(INFO) << "[weasel_ai] correction ok, candidates="
-              << response.candidates.size();
+    LOG(INFO) << "[weasel_ai] correction ok, mode=" << config_.mode
+              << " picked_index=" << response.picked_index
+              << " candidates=" << response.candidates.size();
+  } else if (response.error == "rerank_no_change") {
+    // Selection mode: the model kept the default first candidate, so there is
+    // nothing to add - not an error.
+    LOG(INFO) << "[weasel_ai] rerank: model agrees with the first candidate";
   } else {
     LOG(ERROR) << "[weasel_ai] correction failed: " << response.error;
   }
