@@ -44,8 +44,10 @@ class CorrectionService {
   // Performs the blocking request. Call only from explicit user trigger.
   CorrectionResponse Correct(const CorrectionRequest& request) const;
 
-  // Builds the JSON body (exposed for tests).
-  std::string BuildRequestBody(const CorrectionRequest& request) const;
+  // Builds the JSON body (exposed for tests). include_reasoning_effort=false
+  // omits the field, used when a gateway rejects it.
+  std::string BuildRequestBody(const CorrectionRequest& request,
+                               bool include_reasoning_effort = true) const;
 
   // Parses a chat-completion response body (exposed for tests).
   static CorrectionResponse ParseResponseBody(

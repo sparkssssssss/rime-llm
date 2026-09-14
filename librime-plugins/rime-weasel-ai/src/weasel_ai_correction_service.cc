@@ -144,7 +144,8 @@ CorrectionService::CorrectionService(const AiCorrectionConfig& config)
     : config_(config) {}
 
 std::string CorrectionService::BuildRequestBody(
-    const CorrectionRequest& request) const {
+    const CorrectionRequest& request,
+    bool include_reasoning_effort) const {
   auto root = JsonValue::MakeObject();
   root->set("model", JsonValue::MakeString(config_.model));
 
@@ -173,7 +174,7 @@ std::string CorrectionService::BuildRequestBody(
   root->set("max_tokens", JsonValue::MakeNumber(config_.max_tokens));
   root->set("stream", JsonValue::MakeBool(false));
 
-  if (!config_.reasoning_effort.empty()) {
+  if (include_reasoning_effort && !config_.reasoning_effort.empty()) {
     root->set("reasoning_effort",
               JsonValue::MakeString(config_.reasoning_effort));
   }
@@ -281,18 +282,31 @@ CorrectionResponse CorrectionService::ParseResponseBody(
 CorrectionResponse CorrectionService::Correct(
     const CorrectionRequest& request) const {
   CorrectionResponse response;
-  std::string body = BuildRequestBody(request);
-  HttpRequestResult http = HttpPostJson(config_.endpoint_url(), ResolveApiKey(config_),
-                                        body, config_.timeout_ms,
-                                        kMaxResponseBytes);
-  if (!http.ok) {
-    response.error = http.error.empty() ? ("http_" + std::to_string(http.status_code))
-                                        : http.error;
+  bool include_effort = !config_.reasoning_effort.empty();
+  const int attempts = include_effort ? 2 : 1;
+  for (int attempt = 0; attempt < attempts; ++attempt) {
+    std::string body = BuildRequestBody(request, include_effort);
+    HttpRequestResult http =
+        HttpPostJson(config_.endpoint_url(), ResolveApiKey(config_), body,
+                     config_.timeout_ms, kMaxResponseBytes);
+    if (http.ok) {
+      return ParseResponseBody(http.body,
+                               static_cast<size_t>(config_.max_candidates),
+                               static_cast<size_t>(config_.max_result_bytes));
+    }
+    // Some gateways/models reject reasoning_effort outright (e.g. HTTP 400
+    // "UNSUPPORTED_FIELD"). Retry once without the field instead of failing.
+    if (attempt + 1 < attempts && http.status_code == 400 &&
+        http.body.find("reasoning_effort") != std::string::npos) {
+      include_effort = false;
+      continue;
+    }
+    response.error = http.error.empty()
+                         ? ("http_" + std::to_string(http.status_code))
+                         : http.error;
     return response;
   }
-  return ParseResponseBody(http.body,
-                           static_cast<size_t>(config_.max_candidates),
-                           static_cast<size_t>(config_.max_result_bytes));
+  return response;
 }
 
 bool IsSafeCandidateText(const std::string& text, size_t max_bytes) {
