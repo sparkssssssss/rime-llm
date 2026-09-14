@@ -199,6 +199,29 @@ static void TestDefaultUserMessageUnchanged() {
   assert(user.find("当前候选：你好；你") != std::string::npos);
 }
 
+// Field case: the model replied with the bare sentence instead of JSON.
+static void TestPlainSentenceFallback() {
+  const char* body =
+      "{\"choices\":[{\"message\":{\"content\":\"为什么把校准的候选词放在那么靠后\"}}]}";
+  auto resp = CorrectionService::ParseResponseBody(body, 1);
+  assert(resp.ok);
+  assert(resp.candidates.size() == 1);
+  assert(resp.candidates[0].text == "为什么把校准的候选词放在那么靠后");
+}
+
+// Must NOT salvage explanations / non-sentence text.
+static void TestFallbackRejectsExplanations() {
+  const char* bodies[] = {
+      "{\"choices\":[{\"message\":{\"content\":\"抱歉，我无法完成该请求。\"}}]}",
+      "{\"choices\":[{\"message\":{\"content\":\"解释：这里的拼音对应多个候选\"}}]}",
+      "{\"choices\":[{\"message\":{\"content\":\"```\nplain text\n```\"}}]}",
+  };
+  for (const char* b : bodies) {
+    auto r = CorrectionService::ParseResponseBody(b, 1);
+    assert(!r.ok);
+  }
+}
+
 int main() {
   TestParseBasic();
   TestParseUnicodeEscape();
@@ -213,6 +236,8 @@ int main() {
   TestPromptPlaceholders();
   TestUserTemplate();
   TestDefaultUserMessageUnchanged();
+  TestPlainSentenceFallback();
+  TestFallbackRejectsExplanations();
   std::cout << "all weasel_ai tests passed" << std::endl;
   return 0;
 }

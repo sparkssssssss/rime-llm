@@ -162,6 +162,61 @@ std::string ExpandPlaceholders(const std::string& text,
   return out;
 }
 
+// Some models answer with the sentence itself instead of the requested JSON
+// (observed in the field). Salvage that case: accept a single short line that
+// contains CJK and none of the usual "explanation" markers.
+bool LooksLikePlainSentence(const std::string& raw, std::string* out) {
+  std::string text = raw;
+  // strip surrounding whitespace and common quoting/fences
+  auto trim = [](std::string* t) {
+    size_t b = t->find_first_not_of(" \t\r\n\"'`");
+    size_t e = t->find_last_not_of(" \t\r\n\"'`");
+    if (b == std::string::npos) { t->clear(); return; }
+    *t = t->substr(b, e - b + 1);
+  };
+  trim(&text);
+  if (text.empty() || text.size() > 60)
+    return false;
+  if (text.find('\n') != std::string::npos ||
+      text.find('\r') != std::string::npos)
+    return false;
+  if (text.find('{') != std::string::npos ||
+      text.find('}') != std::string::npos)
+    return false;
+  // Only clearly-explanatory markers are rejected. Note: do NOT include
+  // words that can legitimately appear in a corrected sentence (e.g. 候选,
+  // 注意) - that would reject valid results.
+  // Reject explanation-shaped output, but not sentences that merely contain
+  // such words: only fences/JSON anywhere, apology openers, and labelled
+  // prefixes ("解释：", "说明：") are refused.
+  for (const char* marker : {"```", "JSON", "json"}) {
+    if (text.find(marker) != std::string::npos)
+      return false;
+  }
+  for (const char* opener : {"抱歉", "对不起", "很抱歉", "无法", "解释",
+                             "说明", "注意", "答案", "结果", "提示",
+                             "分析", "以下是"}) {
+    if (text.compare(0, std::char_traits<char>::length(opener), opener) == 0) {
+      // "无法无天"之类的句子不会被拒，只有标签式开头才拒
+      const size_t next = std::char_traits<char>::length(opener);
+      if (next < text.size() && (text[next] == '\xEF' ||  // fullwidth colon
+                                 text[next] == ':' || text[next] == '\n'))
+        return false;
+      if (std::string(opener) == "抱歉" || std::string(opener) == "对不起" ||
+          std::string(opener) == "很抱歉")
+        return false;
+    }
+  }
+  bool has_cjk = false;
+  for (unsigned char c : text) {
+    if (c >= 0x80) { has_cjk = true; break; }
+  }
+  if (!has_cjk)
+    return false;
+  *out = text;
+  return true;
+}
+
 const char* kDefaultSystemPrompt =
     "你是中文拼音输入法的整句校准器。根据无空格拼音串和当前候选列表，"
     "输出与拼音逐音节严格对应、语义最自然的一句中文。规则："
@@ -296,11 +351,33 @@ CorrectionResponse CorrectionService::ParseResponseBody(
   size_t begin = content_text.find('{');
   size_t end = content_text.rfind('}');
   if (begin == std::string::npos || end == std::string::npos || end <= begin) {
+    // No JSON at all: the model may have replied with the bare sentence.
+    std::string salvaged;
+    if (LooksLikePlainSentence(content_text, &salvaged) &&
+        IsSafeCandidateText(salvaged, max_candidate_bytes)) {
+      AiCandidate cand;
+      cand.text = salvaged;
+      cand.score = 1.0;
+      response.candidates.push_back(std::move(cand));
+      response.ok = true;
+      return response;
+    }
     response.error = "content_not_json";
     return response;
   }
   JsonPtr payload = JsonParse(content_text.substr(begin, end - begin + 1), &error);
   if (!payload || !payload->is_object()) {
+    // Fallback: the model may have replied with the plain sentence.
+    std::string salvaged;
+    if (LooksLikePlainSentence(content_text, &salvaged) &&
+        IsSafeCandidateText(salvaged, max_candidate_bytes)) {
+      AiCandidate cand;
+      cand.text = salvaged;
+      cand.score = 1.0;
+      response.candidates.push_back(std::move(cand));
+      response.ok = true;
+      return response;
+    }
     response.error = "invalid_content_json: " + error;
     return response;
   }
