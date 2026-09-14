@@ -114,6 +114,18 @@ void AiCorrectionProcessor::LoadConfig() {
     }
   }
   LoadSystemPromptFile();
+  // Record which prompt is actually in effect. In rerank mode only
+  // ai_correction/rerank_prompt matters; system_prompt (and prompt_file,
+  // which loads into it) is used by generate mode only. Printing this makes
+  // a stale prompt file - or a wrong assumption about which prompt ran -
+  // immediately visible in the log.
+  LOG(INFO) << "[weasel_ai] prompt source: mode=" << config_.mode
+            << " rerank="
+            << (config_.rerank_prompt.empty() ? "built-in" : "custom")
+            << " generate="
+            << (config_.system_prompt.empty() ? "built-in" : "custom")
+            << " prompt_file="
+            << (config_.prompt_file.empty() ? "(none)" : config_.prompt_file);
   if (!config_.extra_params.empty()) {
     std::string json_error;
     if (!JsonParse(config_.extra_params, &json_error)) {
@@ -239,6 +251,19 @@ void AiCorrectionProcessor::TriggerCorrection(
         break;
       request.candidates.push_back(cand->text());
     }
+  }
+  {
+    // Record exactly what the model will see, so a report like "the AI
+    // answered nonsense" can be checked against the candidate pool it got.
+    std::string joined;
+    for (size_t i = 0; i < request.candidates.size(); ++i) {
+      if (i)
+        joined += " | ";
+      joined += request.candidates[i];
+    }
+    LOG(INFO) << "[weasel_ai] request: mode=" << config_.mode
+              << " pool=" << request.candidates.size() << " [" << joined
+              << "]";
   }
   // Committed context window (configurable; 0 disables).
   if (config_.context_window > 0) {
