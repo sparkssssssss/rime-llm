@@ -70,6 +70,11 @@ struct AiCorrectionConfig {
   // rerank mode: allow the model to replace individual characters of the
   // chosen candidate (same character count only). false = selection only.
   bool allow_repair = true;
+  // rerank mode: also surface the AI verdict when it agrees with the current
+  // first candidate. true (default) = the user always gets visible feedback
+  // after pressing the trigger key; false = stay silent unless something is
+  // actually proposed.
+  bool show_agreement = true;
   double temperature = 0.2;
   int max_tokens = 256;
   // Optional request knobs. reasoning_effort="none" disables thinking on

@@ -573,11 +573,15 @@ CorrectionResponse CorrectionService::Correct(
         IsSafeCandidateText(repaired, static_cast<size_t>(config_.max_result_bytes))) {
       final_text = repaired;
     }
-    if (final_text == request.candidates[0]) {
-      // Same as the current first candidate: nothing to add.
+    const bool agrees_with_first = (final_text == request.candidates[0]);
+    if (agrees_with_first && !config_.show_agreement) {
+      // Silent mode: only report when something is actually proposed.
       reranked.error = "rerank_no_change";
       return reranked;
     }
+    // Otherwise surface the verdict anyway (default): pressing the trigger
+    // must always give the user visible feedback, even if it is just
+    // "AI agrees with the first candidate".
     AiCandidate picked;
     picked.text = final_text;
     picked.score = 1.0;

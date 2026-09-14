@@ -52,6 +52,7 @@ bool AiCorrectionConfig::Load(rime::Config* config,
   config->GetInt(prefix + "/rerank_pool", &rerank_pool);
   config->GetString(prefix + "/rerank_prompt", &rerank_prompt);
   config->GetBool(prefix + "/allow_repair", &allow_repair);
+  config->GetBool(prefix + "/show_agreement", &show_agreement);
   config->GetDouble(prefix + "/temperature", &temperature);
   config->GetInt(prefix + "/max_tokens", &max_tokens);
   config->GetBool(prefix + "/deduplicate", &deduplicate);

@@ -257,9 +257,10 @@ void AiCorrectionProcessor::TriggerCorrection(
                                               : response.candidates[0].text)
               << "\"";
   } else if (response.error == "rerank_no_change") {
-    // Selection mode: the model kept the default first candidate, so there is
-    // nothing to add - not an error.
-    LOG(INFO) << "[weasel_ai] rerank: model agrees with the first candidate";
+    // Silent mode (show_agreement=false): the model kept the default first
+    // candidate and we are configured not to add a duplicate.
+    LOG(INFO) << "[weasel_ai] rerank: model agrees with the first candidate "
+                 "(silent mode)";
   } else {
     LOG(ERROR) << "[weasel_ai] correction failed: " << response.error;
   }
