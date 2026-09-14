@@ -218,11 +218,13 @@ bool LooksLikePlainSentence(const std::string& raw, std::string* out) {
 }
 
 const char* kDefaultRerankPrompt =
-    "你是中文拼音输入法的候选重排器。给定拼音串和候选列表，选出与拼音逐音节"
-    "对应、整句语义最通顺的一项。规则："
-    "1) 只能从候选列表中选择，不得改写、拼接或新增文字；"
-    "2) 语义通顺优先于词语常见程度；"
-    "3) 只输出JSON：{\"index\": 序号}（序号从0开始），不要解释。";
+    "你是中文拼音输入法的候选校准器。给定拼音串和候选列表："
+    "1) 若有候选与拼音逐音节完全对应且语义通顺，直接选它，不要改动；"
+    "2) 若所有候选都不够通顺，选最接近的一项，并只替换其中个别汉字把它改通顺；"
+    "3) 修改后必须与拼音逐音节对应，且汉字个数与所选候选完全相同，"
+    "不得增加、删除或调换字数；"
+    "4) 只输出JSON：{\"index\": 序号, \"text\": \"最终句子\"}（序号从0开始），"
+    "不要解释。";
 
 const char* kDefaultSystemPrompt =
     "你是中文拼音输入法的整句校准器。根据无空格拼音串和当前候选列表，"
@@ -357,6 +359,44 @@ std::string CorrectionService::BuildRequestBody(
   }
 
   return root->Dump();
+}
+
+// Counts UTF-8 characters (not bytes) - used to enforce "same length" on a
+// repaired candidate so a model cannot add or drop words.
+size_t Utf8CharCount(const std::string& text) {
+  size_t n = 0;
+  for (unsigned char c : text) {
+    if ((c & 0xC0) != 0x80)
+      ++n;
+  }
+  return n;
+}
+
+// Extracts the optional "text" field of a rerank reply.
+std::string CorrectionService::ParseRerankText(const std::string& body) {
+  std::string error;
+  JsonPtr root = JsonParse(body, &error);
+  if (!root)
+    return std::string();
+  const JsonPtr& choices = root->get("choices");
+  if (!choices->is_array() || choices->size() == 0)
+    return std::string();
+  const JsonPtr& message = choices->at(0)->get("message");
+  if (!message || !message->is_object())
+    return std::string();
+  const JsonPtr& content = message->get("content");
+  if (!content->is_string())
+    return std::string();
+  const std::string& text = content->as_string();
+  const size_t begin = text.find('{');
+  const size_t end = text.rfind('}');
+  if (begin == std::string::npos || end == std::string::npos || end <= begin)
+    return std::string();
+  JsonPtr payload = JsonParse(text.substr(begin, end - begin + 1), &error);
+  if (!payload || !payload->is_object())
+    return std::string();
+  const JsonPtr& value = payload->get("text");
+  return value->is_string() ? value->as_string() : std::string();
 }
 
 int CorrectionService::ParseRerankIndex(const std::string& body) {
@@ -519,18 +559,27 @@ CorrectionResponse CorrectionService::Correct(
       reranked.error = "rerank_index_out_of_range";
       return reranked;
     }
-    if (index == 0) {
-      // The model agrees with the default first candidate: nothing to add.
+    const std::string& chosen = request.candidates[index];
+    // The model may return a minimally repaired version of the chosen
+    // candidate. Accept it only when the character count is unchanged, so it
+    // can replace homophones but never add or drop words.
+    std::string final_text = chosen;
+    const std::string repaired = ParseRerankText(http.body);
+    if (config_.allow_repair && !repaired.empty() && repaired != chosen &&
+        Utf8CharCount(repaired) == Utf8CharCount(chosen) &&
+        IsSafeCandidateText(repaired, static_cast<size_t>(config_.max_result_bytes))) {
+      final_text = repaired;
+    }
+    if (final_text == request.candidates[0]) {
+      // Same as the current first candidate: nothing to add.
       reranked.error = "rerank_no_change";
       return reranked;
     }
     AiCandidate picked;
-    picked.text = request.candidates[index];
+    picked.text = final_text;
     picked.score = 1.0;
     reranked.candidates.push_back(std::move(picked));
-    reranked.ok = !picked.text.empty();
-    if (!reranked.ok)
-      reranked.error = "rerank_empty_candidate";
+    reranked.ok = true;
     return reranked;
   }
 

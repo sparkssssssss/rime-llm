@@ -67,6 +67,9 @@ struct AiCorrectionConfig {
   std::string mode = "generate";
   int rerank_pool = 9;       // how many candidates to offer in rerank mode
   std::string rerank_prompt;  // optional custom rerank system prompt
+  // rerank mode: allow the model to replace individual characters of the
+  // chosen candidate (same character count only). false = selection only.
+  bool allow_repair = true;
   double temperature = 0.2;
   int max_tokens = 256;
   // Optional request knobs. reasoning_effort="none" disables thinking on

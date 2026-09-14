@@ -60,6 +60,8 @@ class CorrectionService {
 
   // Parses a rerank reply: {"index": k, "text": "..."} (text optional).
   static int ParseRerankIndex(const std::string& body);
+  // Extracts the optional repaired "text" field ("" when absent/invalid).
+  static std::string ParseRerankText(const std::string& body);
 
  private:
   AiCorrectionConfig config_;

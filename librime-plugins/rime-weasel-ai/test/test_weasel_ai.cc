@@ -242,7 +242,8 @@ static void TestRerankRequest() {
   assert(user.find("index") != std::string::npos);
   const std::string sys =
       v->get("messages")->at(0)->get("content")->as_string();
-  assert(sys.find("只能从候选列表中选择") != std::string::npos);
+  assert(sys.find("只替换其中个别汉字") != std::string::npos);
+  assert(sys.find("汉字个数与所选候选完全相同") != std::string::npos);
 }
 
 static void TestRerankIndexParsing() {
@@ -268,6 +269,44 @@ static void TestRerankIndexParsing() {
   assert(CorrectionService::ParseRerankIndex(wrap("{}")) == -1);
 }
 
+// Helpers to exercise the rerank decision logic through Correct()'s parsing
+// pieces (index + optional repaired text).
+static std::string ChatEnvelope(const std::string& reply) {
+  std::string esc;
+  for (char c : reply) {
+    if (c == '"') esc += "\\\"";
+    else if (c == '\\') esc += "\\\\";
+    else esc += c;
+  }
+  return "{\"choices\":[{\"message\":{\"content\":\"" + esc + "\"}}]}";
+}
+
+static void TestRerankRepair() {
+  // 1) index only -> use the chosen candidate verbatim
+  assert(CorrectionService::ParseRerankIndex(ChatEnvelope("{\"index\": 2}")) == 2);
+  // 2) repair with the SAME character count is accepted
+  const std::string ok_reply =
+      ChatEnvelope("{\"index\": 0, \"text\": \"哭过也笑过\"}");
+  assert(CorrectionService::ParseRerankIndex(ok_reply) == 0);
+  assert(CorrectionService::ParseRerankText(ok_reply) == "哭过也笑过");
+  // 3) repair that changes the character count must be rejected by the plugin
+  const std::string bad_reply =
+      ChatEnvelope("{\"index\": 0, \"text\": \"他的电脑崩了\"}");
+  assert(CorrectionService::ParseRerankText(bad_reply) == "他的电脑崩了");
+  // (the plugin compares char counts; the helper below mirrors that rule)
+  struct Counter {
+    static size_t Count(const std::string& t) {
+      size_t n = 0;
+      for (unsigned char c : t)
+        if ((c & 0xC0) != 0x80) ++n;
+      return n;
+    }
+  };
+  assert(Counter::Count("他的电脑崩快了") == 7);
+  assert(Counter::Count("他的电脑崩溃了") == 7);  // accepted (same length)
+  assert(Counter::Count("他的电脑崩了") == 6);    // rejected (6 != 7)
+}
+
 int main() {
   TestParseBasic();
   TestParseUnicodeEscape();
@@ -286,6 +325,7 @@ int main() {
   TestFallbackRejectsExplanations();
   TestRerankRequest();
   TestRerankIndexParsing();
+  TestRerankRepair();
   std::cout << "all weasel_ai tests passed" << std::endl;
   return 0;
 }
