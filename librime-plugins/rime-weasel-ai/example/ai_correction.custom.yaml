@@ -48,3 +48,15 @@ patch:
   ai_correction/context_window: 100
   # 候选注释文字
   ai_correction/comment: AI校准
+
+  # ---- 推理模型（如 spark / deepseek-r1 类）必读 ----
+  # 这类模型默认把 token 全花在"思考"上，会返回空 content 且耗时 10s+。
+  # 实测：reasoning_effort: none 可关闭思考；注意 low/minimal 无效（思考文本会
+  # 混进 content 导致 JSON 解析失败）。
+  ai_correction/reasoning_effort: none
+  ai_correction/max_tokens: 256
+  # 提示词（可自定义）。默认提示词已内置"逐音节自查、禁止编造拼音中没有的字词"，
+  # 实测能把整句校准准确率从偶发幻觉提升到稳定正确。
+  # ai_correction/system_prompt: '你的自定义提示词……'
+  # 网关专有参数可用 JSON 透传（会合并进请求体，可覆盖任意字段）：
+  # ai_correction/extra_params: '{"top_p":0.8}'
