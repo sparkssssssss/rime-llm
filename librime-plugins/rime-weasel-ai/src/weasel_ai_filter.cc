@@ -50,7 +50,8 @@ class AiInsertTranslation : public rime::Translation {
   void Advance() {
     current_.reset();
     for (;;) {
-      const bool upstream_exhausted = !upstream_ || upstream_->exhausted();
+      const bool upstream_exhausted =
+          upstream_done_ || !upstream_ || upstream_->exhausted();
       switch (placement_.Next(emitted_, upstream_exhausted)) {
         case EmitAction::kAi: {
           // placement_ already advanced its cursor; take the next AI item.
@@ -71,11 +72,15 @@ class AiInsertTranslation : public rime::Translation {
         case EmitAction::kUpstream: {
           auto cand = upstream_ ? upstream_->Peek() : nullptr;
           if (!cand) {
-            // Upstream lied about being non-exhausted; treat as empty.
+            // Upstream claims non-exhausted but yields nothing: give it a
+            // few chances, then treat it as empty so we can never spin.
             if (upstream_)
               upstream_->Next();
+            if (++null_pulls_ > 8)
+              upstream_done_ = true;
             continue;
           }
+          null_pulls_ = 0;
           upstream_->Next();
           // Upstream AI candidates are re-created by this filter.
           if (cand->type() == "ai_correction")
@@ -108,6 +113,8 @@ class AiInsertTranslation : public rime::Translation {
   std::vector<rime::string> seen_texts_;
   rime::an<rime::Candidate> current_;
   size_t emitted_ = 0;
+  int null_pulls_ = 0;
+  bool upstream_done_ = false;
 };
 
 std::string ReadPlacementConfig(rime::Engine* engine, int* page_size) {
@@ -120,7 +127,7 @@ std::string ReadPlacementConfig(rime::Engine* engine, int* page_size) {
       (engine && engine->schema()) ? engine->schema()->config() : nullptr;
   if (config) {
     config->GetString("ai_correction/candidate_position", &position);
-    config->GetInt("ai_correction/page_size", &size);
+    config->GetInt("ai_correction/page_size", &size);  // explicit override
   }
   rime::the<rime::Config> global(
       rime::Config::Require("config")->Create("default"));
@@ -132,10 +139,10 @@ std::string ReadPlacementConfig(rime::Engine* engine, int* page_size) {
   if (position.empty())
     position = "last";
   if (size <= 0) {
-    // Prefer the schema's real page size, then the global menu setting.
+    // Schema::page_size() is authoritative: librime's DefaultConfigPlugin
+    // injects default.yaml's `menu` section into every schema config, and
+    // rime_api's get_context paginates with exactly this value.
     size = (engine && engine->schema()) ? engine->schema()->page_size() : 5;
-    if (global)
-      global->GetInt("menu/page_size", &size);
   }
   if (size < 1)
     size = 1;
@@ -189,9 +196,11 @@ rime::an<rime::Translation> AiCorrectionFilter::Apply(
   std::vector<rime::an<rime::Candidate>> ai_candidates;
   const size_t start = result->seg_start;
   const size_t end = result->seg_end;
+  const std::string comment =
+      result->comment.empty() ? std::string("AI校准") : result->comment;
   for (const auto& cand : result->candidates) {
     ai_candidates.push_back(rime::New<rime::SimpleCandidate>(
-        "ai_correction", start, end, cand.text, "AI校准"));
+        "ai_correction", start, end, cand.text, comment));
   }
 
   LOG(INFO) << "[weasel_ai] filter inserting " << ai_candidates.size()

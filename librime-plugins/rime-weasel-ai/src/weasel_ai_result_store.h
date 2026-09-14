@@ -28,6 +28,7 @@ struct AiResult {
   size_t seg_start = 0;
   size_t seg_end = 0;
   bool has_range = false;
+  std::string comment;  // label shown on the candidate (ai_correction/comment)
 };
 
 class AiResultStore {

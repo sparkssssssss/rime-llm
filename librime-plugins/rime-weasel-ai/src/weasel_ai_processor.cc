@@ -199,6 +199,7 @@ void AiCorrectionProcessor::TriggerCorrection(
   result.seg_start = seg.start;
   result.seg_end = seg.end;
   result.has_range = true;
+  result.comment = config_.comment;
   if (response.ok) {
     result.candidates = std::move(response.candidates);
   }
