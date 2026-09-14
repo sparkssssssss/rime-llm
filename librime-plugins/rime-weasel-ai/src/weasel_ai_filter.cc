@@ -21,11 +21,13 @@ class AiInsertTranslation : public rime::Translation {
   AiInsertTranslation(rime::an<rime::Translation> upstream,
                       std::vector<rime::an<rime::Candidate>> ai_candidates,
                       size_t insert_index,
-                      AiResultStore* store)
+                      AiResultStore* store,
+                      bool deduplicate)
       : upstream_(upstream),
         ai_(std::move(ai_candidates)),
         placement_(insert_index, ai_.size()),
-        store_(store) {
+        store_(store),
+        deduplicate_(deduplicate) {
     if ((!upstream_ || upstream_->exhausted()) && ai_.empty())
       set_exhausted(true);
   }
@@ -59,8 +61,8 @@ class AiInsertTranslation : public rime::Translation {
           if (ai_pos >= ai_.size())
             continue;
           auto cand = ai_[ai_pos];
-          if (IsDuplicateText(cand->text()))
-            continue;  // skip duplicate, keep planning
+          if (deduplicate_ && IsDuplicateText(cand->text()))
+            continue;  // configured to hide duplicates; keep planning
           if (store_)
             store_->set_ai_index(emitted_);
           seen_texts_.push_back(cand->text());
@@ -110,6 +112,7 @@ class AiInsertTranslation : public rime::Translation {
   std::vector<rime::an<rime::Candidate>> ai_;
   AiPlacement placement_;
   AiResultStore* store_ = nullptr;
+  bool deduplicate_ = false;
   std::vector<rime::string> seen_texts_;
   rime::an<rime::Candidate> current_;
   size_t emitted_ = 0;
@@ -117,38 +120,50 @@ class AiInsertTranslation : public rime::Translation {
   bool upstream_done_ = false;
 };
 
-std::string ReadPlacementConfig(rime::Engine* engine, int* page_size) {
-  // The ai_correction node normally lives in default.yaml (patched via
-  // default.custom.yaml), NOT in the schema file, so every read must fall
-  // back to the deployed default config - same rule the processor follows.
-  std::string position;
-  int size = 0;
-  rime::Config* config =
+struct FilterConfig {
+  std::string position = "last";
+  int page_size = 5;
+  bool deduplicate = false;
+};
+
+// Reads ai_correction/* with schema-level values taking precedence over the
+// deployed default config. Every key uses an explicit "found" flag so a
+// schema value of false/0 is not overridden by the global one.
+FilterConfig ReadFilterConfig(rime::Engine* engine) {
+  FilterConfig result;
+  rime::Config* schema_config =
       (engine && engine->schema()) ? engine->schema()->config() : nullptr;
-  if (config) {
-    config->GetString("ai_correction/candidate_position", &position);
-    config->GetInt("ai_correction/page_size", &size);  // explicit override
-  }
   rime::the<rime::Config> global(
       rime::Config::Require("config")->Create("default"));
-  if (position.empty() && global)
-    global->GetString("ai_correction/candidate_position", &position);
-  if (size <= 0 && global)
-    global->GetInt("ai_correction/page_size", &size);
 
-  if (position.empty())
-    position = "last";
-  if (size <= 0) {
+  bool found = false;
+  found = schema_config &&
+          schema_config->GetString("ai_correction/candidate_position",
+                                   &result.position);
+  if (!found && global)
+    global->GetString("ai_correction/candidate_position", &result.position);
+  if (result.position.empty())
+    result.position = "last";
+
+  int size = 0;
+  found = schema_config &&
+          schema_config->GetInt("ai_correction/page_size", &size);
+  if (!found && global)
+    found = global->GetInt("ai_correction/page_size", &size);
+  if (!found || size <= 0) {
     // Schema::page_size() is authoritative: librime's DefaultConfigPlugin
     // injects default.yaml's `menu` section into every schema config, and
-    // rime_api's get_context paginates with exactly this value.
+    // rime_api's get_context() paginates with exactly this value.
     size = (engine && engine->schema()) ? engine->schema()->page_size() : 5;
   }
-  if (size < 1)
-    size = 1;
-  if (page_size)
-    *page_size = size;
-  return position;
+  result.page_size = size < 1 ? 1 : size;
+
+  found = schema_config &&
+          schema_config->GetBool("ai_correction/deduplicate",
+                                 &result.deduplicate);
+  if (!found && global)
+    global->GetBool("ai_correction/deduplicate", &result.deduplicate);
+  return result;
 }
 
 }  // namespace
@@ -156,14 +171,15 @@ std::string ReadPlacementConfig(rime::Engine* engine, int* page_size) {
 AiCorrectionFilter::AiCorrectionFilter(const rime::Ticket& ticket)
     : Filter(ticket) {
   store_ = FindOrCreateStore(ticket.engine);
-  int page_size = 5;
-  const std::string position = ReadPlacementConfig(engine_, &page_size);
-  insert_index_ = (position == "page1_end")
-                      ? static_cast<size_t>(page_size - 1)
+  const FilterConfig config = ReadFilterConfig(engine_);
+  deduplicate_ = config.deduplicate;
+  insert_index_ = (config.position == "page1_end")
+                      ? static_cast<size_t>(config.page_size - 1)
                       : AiPlacement::kLast;
-  LOG(INFO) << "[weasel_ai] filter placement=" << position
-            << " page_size=" << page_size
-            << " insert_index=" << insert_index_;
+  LOG(INFO) << "[weasel_ai] filter placement=" << config.position
+            << " page_size=" << config.page_size
+            << " insert_index=" << insert_index_
+            << " deduplicate=" << deduplicate_;
 }
 
 rime::an<rime::Translation> AiCorrectionFilter::Apply(
@@ -208,7 +224,8 @@ rime::an<rime::Translation> AiCorrectionFilter::Apply(
             << " (range " << start << "-" << end << ")";
   store_->clear_ai_index();
   auto filtered = rime::New<AiInsertTranslation>(
-      translation, std::move(ai_candidates), insert_index_, store_);
+      translation, std::move(ai_candidates), insert_index_, store_,
+      deduplicate_);
   if (filtered->exhausted())
     return translation;
   return filtered;

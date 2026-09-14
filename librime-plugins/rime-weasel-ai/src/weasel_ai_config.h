@@ -59,6 +59,10 @@ struct AiCorrectionConfig {
   // Optional request knobs. reasoning_effort="none" disables thinking on
   // reasoning models (huge latency win). extra_params is a raw JSON object
   // merged into the request body last, for gateway-specific options.
+  // When true, an AI candidate whose text duplicates an existing candidate is
+  // suppressed. Default false: always show it, so the user gets feedback that
+  // the AI ran even when it agrees with the built-in candidates.
+  bool deduplicate = false;
   std::string reasoning_effort;
   std::string extra_params;
 

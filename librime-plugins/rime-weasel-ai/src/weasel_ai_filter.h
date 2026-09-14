@@ -33,6 +33,7 @@ class AiCorrectionFilter : public rime::Filter {
   // Absolute output index for the first AI candidate (AiPlacement::kLast for
   // "append at the end").
   size_t insert_index_ = AiPlacement::kLast;
+  bool deduplicate_ = false;
   AiResultStore* store_ = nullptr;
 };
 

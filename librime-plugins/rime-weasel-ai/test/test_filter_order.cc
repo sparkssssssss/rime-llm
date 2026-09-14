@@ -222,6 +222,7 @@ void TestUpstreamAiDropped() {
 void TestDuplicateSuppressed() {
   Fixture f;
   rime::Config::Deployed().Set("ai_correction/candidate_position", "page1_end");
+  rime::Config::Deployed().Set("ai_correction/deduplicate", "1");
   f.context.set_input("nihao");
   f.SetResult("nihao", {"dup"}, 0, 5);
   std::vector<std::string> upstream = Normals(12);
@@ -236,6 +237,26 @@ void TestDuplicateSuppressed() {
     ++count;
   assert(count == 1);
   std::cout << "  duplicate suppressed OK: " << joined << std::endl;
+}
+
+void TestDuplicateShownByDefault() {
+  // deduplicate is off by default: the AI candidate must be visible even when
+  // it repeats an existing candidate (user feedback that the AI ran).
+  Fixture f;
+  rime::Config::Deployed().Set("ai_correction/candidate_position", "page1_end");
+  f.context.set_input("nihao");
+  f.SetResult("nihao", {"dup"}, 0, 5);
+  std::vector<std::string> upstream = Normals(12);
+  upstream[2] = "dup";
+  auto out = Drain(f.Apply(upstream));
+  const std::string joined = Join(out);
+  size_t count = 0;
+  for (size_t pos = joined.find("dup"); pos != std::string::npos;
+       pos = joined.find("dup", pos + 1))
+    ++count;
+  assert(count == 2);  // the normal one + the AI one at index 8
+  assert(joined == "n0,n1,dup,n3,n4,n5,n6,n7,dup,n8,n9,n10,n11");
+  std::cout << "  duplicate shown by default OK: " << joined << std::endl;
 }
 
 void TestEmptyUpstream() {
@@ -319,6 +340,7 @@ int main() {
   TestLastPlacement();
   TestUpstreamAiDropped();
   TestDuplicateSuppressed();
+  TestDuplicateShownByDefault();
   TestEmptyUpstream();
   TestSchemaOverrideWins();
   TestMultiSegmentMatch();

@@ -60,3 +60,6 @@ patch:
   # ai_correction/system_prompt: '你的自定义提示词……'
   # 网关专有参数可用 JSON 透传（会合并进请求体，可覆盖任意字段）：
   # ai_correction/extra_params: '{"top_p":0.8}'
+  # 是否隐藏与现有候选重复的 AI 结果。默认 false（始终显示），这样即使
+  # AI 与内置首选一致，你也能在候选栏看到"AI校准"确认；设 true 可去噪。
+  # ai_correction/deduplicate: true
