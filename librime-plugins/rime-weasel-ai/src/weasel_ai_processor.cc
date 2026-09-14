@@ -252,7 +252,10 @@ void AiCorrectionProcessor::TriggerCorrection(
   if (response.ok) {
     LOG(INFO) << "[weasel_ai] correction ok, mode=" << config_.mode
               << " picked_index=" << response.picked_index
-              << " candidates=" << response.candidates.size();
+              << " text=\""
+              << (response.candidates.empty() ? std::string()
+                                              : response.candidates[0].text)
+              << "\"";
   } else if (response.error == "rerank_no_change") {
     // Selection mode: the model kept the default first candidate, so there is
     // nothing to add - not an error.
